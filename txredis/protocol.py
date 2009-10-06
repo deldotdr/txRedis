@@ -65,13 +65,16 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """depending on the current reply state, add to the result and
         decide if the deferred callback should be fired (result complete).
         """
-        if self.state == self.SINGLE_LINE or self.WAIT_BULK:
-            self.result = data
-            self.finishResult()
+        # Redis to Python Type converter
+        if data == 'none':
+            data = None
         if self.state == self.WAIT_MULTI:
             self.result.append(data)
-            if len(self.result) == self._multi_bulk_reply_len:
+            if len(self.result) >= self._multi_bulk_reply_len:
                 self.finishResult()
+        else:
+            self.result = data
+            self.finishResult()
 
     def finishResult(self):
         """fire deferred with current result, and rest current result
@@ -106,21 +109,21 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             self._push_to_result(line[1:])
             return
         if c == '*':
-            self.state = self.WAIT_MULTI
             try:
                 self._multi_bulk_reply_len = int(line[1:])
+                if self._multi_bulk_reply_len == -1:
+                    self._push_to_result(None)
+                    return
+                if self._multi_bulk_reply_len == 0:
+                    self._push_to_result([])
+                    return
+                self.state = self.WAIT_MULTI
             except (TypeError, ValueError):
                 self._push_to_result(InvalidResponse("Cannot convert multi-response header '%s' to integer" % line))
                 return
             self.result = list()
             return
-        self.state = self.WAIT_BULK
         return self._get_value(line)
-
-    def get_response(self):
-        """return deferred which will fire with response from server.
-        """
-        return self.resultQueue.get()
 
     def _get_value(self, data):
         """
@@ -147,8 +150,14 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             return 
         if c == '$':
             self._next_bulk_reply_len = i
+            if i == 0:
+                self._push_to_result('')
             return
 
+    def get_response(self):
+        """return deferred which will fire with response from server.
+        """
+        return self.resultQueue.get()
 
     
     def _write(self, s):
@@ -340,9 +349,11 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self.connect()
         self._write('TYPE %s\r\n' % name)
         res = self.get_response()
-        return None if res == 'none' else res
+        # return None if res == 'none' else res
+        return res
     
     # Commands operating on the key space
+    @defer.inlineCallbacks
     def keys(self, pattern):
         """
         >>> r = Redis(db=9)
@@ -364,7 +375,14 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self.connect()
         self._write('KEYS %s\r\n' % pattern)
-        return self.get_response().split()
+        # return self.get_response().split()
+        r = yield self.get_response()
+        if r is not None:
+            res = r.split()
+            res.sort()# XXX is sort ok?
+        else:
+            res = []
+        defer.returnValue(res)
     
     def randomkey(self):
         """
@@ -730,6 +748,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         ))
         return self.get_response()
     
+    @defer.inlineCallbacks
     def sinter(self, *args):
         """
         >>> r = Redis(db=9)
@@ -760,7 +779,10 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self.connect()
         self._write('SINTER %s\r\n' % ' '.join(args))
-        return set(self.get_response())
+        res = yield self.get_response()
+        if type(res) is list:
+            res = set(res)
+        defer.returnValue(res)
     
     def sinterstore(self, dest, *args):
         """
@@ -786,6 +808,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write('SINTERSTORE %s %s\r\n' % (dest, ' '.join(args)))
         return self.get_response()
 
+    @defer.inlineCallbacks
     def smembers(self, name):
         """
         >>> r = Redis(db=9)
@@ -806,8 +829,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self.connect()
         self._write('SMEMBERS %s\r\n' % name)
-        return set(self.get_response())
+        res = yield self.get_response()
+        if type(res) is list:
+            res = set(res)
+        defer.returnValue(res)
 
+    @defer.inlineCallbacks
     def sunion(self, *args):
         """
         >>> r = Redis(db=9)
@@ -830,7 +857,10 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self.connect()
         self._write('SUNION %s\r\n' % ' '.join(args))
-        return set(self.get_response())
+        res = yield self.get_response()
+        if type(res) is list:
+            res = set(res)
+        defer.returnValue(res)
 
     def sunionstore(self, dest, *args):
         """
@@ -950,6 +980,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write('LASTSAVE\r\n')
         return self.get_response()
     
+    @defer.inlineCallbacks
     def info(self):
         """
         >>> r = Redis(db=9)
@@ -963,12 +994,13 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self.connect()
         self._write('INFO\r\n')
         info = dict()
-        for l in self.get_response().split('\r\n'):
+        res = yield self.get_response()
+        for l in res.split('\r\n'):
             if not l:
                 continue
             k, v = l.split(':', 1)
             info[k] = int(v) if v.isdigit() else v
-        return info
+        defer.returnValue(info)
     
     def sort(self, name, by=None, get=None, start=None, num=None, desc=False, alpha=False):
         """
