@@ -1,4 +1,4 @@
-""" 
+"""
 A client for the Redis daemon.
 
 
@@ -13,10 +13,8 @@ A client for the Redis daemon.
 
 
 import decimal
-import errno
 
 from twisted.internet import defer
-from twisted.internet import reactor
 from twisted.protocols import basic
 from twisted.protocols import policies
 
@@ -33,7 +31,7 @@ class InvalidData(RedisError): pass
 class Redis(basic.LineReceiver, policies.TimeoutMixin):
     """The main Redis client.
     """
-    
+
     # States
     READY = 0
     SINGLE_LINE = 1
@@ -50,7 +48,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._next_bulk_reply_len = None
         self._multi_bulk_reply_len = None
         self.resultQueue = defer.DeferredQueue()
-        
+
     def _encode(self, s):
         if isinstance(s, str):
             return s
@@ -58,9 +56,9 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             try:
                 return s.encode(self.charset, self.errors)
             except UnicodeEncodeError, e:
-                raise InvalidData("Error encoding unicode value '%s': %s" % (value.encode(self.charset, 'replace'), e))
+                raise InvalidData("Error encoding unicode value '%s': %s" % (s.encode(self.charset, 'replace'), e))
         return str(s)
-    
+
     def _push_to_result(self, data):
         """depending on the current reply state, add to the result and
         decide if the deferred callback should be fired (result complete).
@@ -86,15 +84,15 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
 
     def lineReceived(self, line):
         """
-        Simple state machine. 
+        Simple state machine.
         States:
-         - Ready to receive 
+         - Ready to receive
           o "-" error message
           o "+" single line reply
           o "$" bulk data
           o "*" multi-bulk data
           o ":" integer number
-         - Receiving 
+         - Receiving
           o A single line
           o Multiple lines
         """
@@ -147,7 +145,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             return
         if c == ':':
             self._push_to_result(i)
-            return 
+            return
         if c == '$':
             self._next_bulk_reply_len = i
             if i == 0:
@@ -159,27 +157,27 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         return self.resultQueue.get()
 
-    
+
     def _write(self, s):
         """
         XXX replace this with sendLine
         """
         self.transport.write(s)
-            
+
     def ping(self):
         """
         >>> r = Redis(db=9)
         >>> r.ping()
         'PONG'
-        >>> 
+        >>>
         """
         self.connect()
         self._write('PING\r\n')
         return self.get_response()
-    
-    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # REDIS COMMANDS
-    # 
+    #
 
     # Commands operating on string values
     def set(self, name, value, preserve=False, getset=False):
@@ -197,7 +195,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         0
         >>> r.get('b')
         Decimal("105.2")
-        >>> 
+        >>>
         """
         # the following will raise an error for unicode values that can't be encoded to ascii
         # we could probably add an 'encoding' arg to init, but then what do we do with get()?
@@ -210,7 +208,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
                 command, name, len(value), value
             ))
         return self.get_response()
-    
+
     def get(self, name):
         """
         >>> r = Redis(db=9)
@@ -229,12 +227,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         >>> r.get('c')
         u' \\r\\naaa\\nbbb\\r\\ncccc\\nddd\\r\\n '
         >>> r.get('ajhsd')
-        >>> 
+        >>>
         """
         self.connect()
         self._write('GET %s\r\n' % name)
         return self.get_response()
-    
+
     def getset(self, name, value):
         """
         >>> r = Redis(db=9)
@@ -242,10 +240,10 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         'OK'
         >>> r.getset('a', 2)
         u'pippo'
-        >>> 
+        >>>
         """
         return self.set(name, value, getset=True)
-        
+
     def mget(self, *args):
         """
         >>> r = Redis(db=9)
@@ -253,12 +251,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         ('OK', 'OK', 'OK', 'OK')
         >>> r.mget('a', 'b', 'c', 'd')
         [u'pippo', 15, u'\\r\\naaa\\nbbb\\r\\ncccc\\nddd\\r\\n', u'\\r\\n']
-        >>> 
+        >>>
         """
         self.connect()
         self._write('MGET %s\r\n' % ' '.join(args))
         return self.get_response()
-    
+
     def incr(self, name, amount=1):
         """
         >>> r = Redis(db=9)
@@ -293,7 +291,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         -2
         >>> r.decr('a', 5)
         -7
-        >>> 
+        >>>
         """
         self.connect()
         if amount == 1:
@@ -301,7 +299,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         else:
             self._write('DECRBY %s %s\r\n' % (name, amount))
         return self.get_response()
-    
+
     def exists(self, name):
         """
         >>> r = Redis(db=9)
@@ -330,7 +328,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         0
         >>> r.delete('a')
         0
-        >>> 
+        >>>
         """
         self.connect()
         self._write('DEL %s\r\n' % name)
@@ -344,14 +342,14 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         >>> r.get_type('a')
         'string'
         >>> r.get_type('zzz')
-        >>> 
+        >>>
         """
         self.connect()
         self._write('TYPE %s\r\n' % name)
         res = self.get_response()
         # return None if res == 'none' else res
         return res
-    
+
     # Commands operating on the key space
     @defer.inlineCallbacks
     def keys(self, pattern):
@@ -383,7 +381,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         else:
             res = []
         defer.returnValue(res)
-    
+
     def randomkey(self):
         """
         >>> r = Redis(db=9)
@@ -391,13 +389,13 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         'OK'
         >>> isinstance(r.randomkey(), str)
         True
-        >>> 
+        >>>
         """
         #raise NotImplementedError("Implemented but buggy, do not use.")
         self.connect()
         self._write('RANDOMKEY\r\n')
         return self.get_response()
-    
+
     def rename(self, src, dst, preserve=False):
         """
         >>> r = Redis(db=9)
@@ -417,7 +415,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         'OK'
         >>> r.rename('b', 'a', preserve=True)
         0
-        >>> 
+        >>>
         """
         self.connect()
         if preserve:
@@ -426,18 +424,18 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         else:
             self._write('RENAME %s %s\r\n' % (src, dst))
             return self.get_response() #.strip()
-        
+
     def dbsize(self):
         """
         >>> r = Redis(db=9)
         >>> type(r.dbsize())
         <type 'int'>
-        >>> 
+        >>>
         """
         self.connect()
         self._write('DBSIZE\r\n')
         return self.get_response()
-    
+
     def expire(self, name, time):
         """
         >>> r = Redis(db=9)
@@ -447,12 +445,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         1
         >>> r.expire('zzzzz', 1)
         0
-        >>> 
+        >>>
         """
         self.connect()
         self._write('EXPIRE %s %s\r\n' % (name, time))
         return self.get_response()
-    
+
     def ttl(self, name):
         """
         >>> r = Redis(db=9)
@@ -464,12 +462,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         10
         >>> r.expire('a', 0)
         0
-        >>> 
+        >>>
         """
         self.connect()
         self._write('TTL %s\r\n' % name)
         return self.get_response()
-    
+
     # Commands operating on lists
     def push(self, name, value, tail=False):
         """
@@ -485,7 +483,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         ... except ResponseError, e:
         ...     print e
         Operation against a key holding the wrong kind of value
-        >>> 
+        >>>
         """
         self.connect()
         value = self._encode(value)
@@ -493,7 +491,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             'LPUSH' if tail else 'RPUSH', name, len(value), value
         ))
         return self.get_response()
-    
+
     def llen(self, name):
         """
         >>> r = Redis(db=9)
@@ -507,7 +505,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         'OK'
         >>> r.llen('l')
         2
-        >>> 
+        >>>
         """
         self.connect()
         self._write('LLEN %s\r\n' % name)
@@ -534,12 +532,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         []
         >>> r.lrange('l', -1, -1)
         [u'bbb']
-        >>> 
+        >>>
         """
         self.connect()
         self._write('LRANGE %s %s %s\r\n' % (name, start, end))
         return self.get_response()
-        
+
     def ltrim(self, name, start, end):
         """
         >>> r = Redis(db=9)
@@ -564,12 +562,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         'OK'
         >>> r.llen('l')
         0
-        >>> 
+        >>>
         """
         self.connect()
         self._write('LTRIM %s %s %s\r\n' % (name, start, end))
         return self.get_response()
-    
+
     def lindex(self, name, index):
         """
         >>> r = Redis(db=9)
@@ -586,12 +584,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         u'ccc'
         >>> r.lindex('l', -1)
         u'ccc'
-        >>> 
+        >>>
         """
         self.connect()
         self._write('LINDEX %s %s\r\n' % (name, index))
         return self.get_response()
-        
+
     def pop(self, name, tail=False):
         """
         >>> r = Redis(db=9)
@@ -616,12 +614,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         >>> r.pop('l')
         u'aaa'
         >>> r.pop('l')
-        >>> 
+        >>>
         """
         self.connect()
         self._write('%s %s\r\n' % ('RPOP' if tail else 'LPOP', name))
         return self.get_response()
-    
+
     def lset(self, name, index, value):
         """
         >>> r = Redis(db=9)
@@ -643,7 +641,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         'OK'
         >>> r.lrange('l', 0, 1)
         [u'bbb']
-        >>> 
+        >>>
         """
         self.connect()
         value = self._encode(value)
@@ -651,7 +649,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             name, index, len(value), value
         ))
         return self.get_response()
-    
+
     def lrem(self, name, value, num=0):
         """
         >>> r = Redis(db=9)
@@ -677,7 +675,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         1
         >>> r.lrem('l', 'aaa', 1)
         0
-        >>> 
+        >>>
         """
         self.connect()
         value = self._encode(value)
@@ -685,7 +683,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             name, num, len(value), value
         ))
         return self.get_response()
-    
+
     # Commands operating on sets
     def sadd(self, name, value):
         """
@@ -695,7 +693,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         1
         >>> r.sadd('s', 'b')
         1
-        >>> 
+        >>>
         """
         self.connect()
         value = self._encode(value)
@@ -703,7 +701,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             name, len(value), value
         ))
         return self.get_response()
-        
+
     def srem(self, name, value):
         """
         >>> r = Redis(db=9)
@@ -717,7 +715,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         1
         >>> r.sismember('s', 'b')
         0
-        >>> 
+        >>>
         """
         self.connect()
         value = self._encode(value)
@@ -725,7 +723,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             name, len(value), value
         ))
         return self.get_response()
-    
+
     def sismember(self, name, value):
         """
         >>> r = Redis(db=9)
@@ -747,7 +745,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             name, len(value), value
         ))
         return self.get_response()
-    
+
     @defer.inlineCallbacks
     def sinter(self, *args):
         """
@@ -775,7 +773,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         set([])
         >>> r.sinter('s1', 's2')
         set([u'a'])
-        >>> 
+        >>>
         """
         self.connect()
         self._write('SINTER %s\r\n' % ' '.join(args))
@@ -783,7 +781,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         if type(res) is list:
             res = set(res)
         defer.returnValue(res)
-    
+
     def sinterstore(self, dest, *args):
         """
         >>> r = Redis(db=9)
@@ -802,7 +800,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         1
         >>> r.smembers('s_s')
         set([u'a'])
-        >>> 
+        >>>
         """
         self.connect()
         self._write('SINTERSTORE %s %s\r\n' % (dest, ' '.join(args)))
@@ -825,7 +823,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         Operation against a key holding the wrong kind of value
         >>> r.smembers('s')
         set([u'a', u'b'])
-        >>> 
+        >>>
         """
         self.connect()
         self._write('SMEMBERS %s\r\n' % name)
@@ -853,7 +851,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         1
         >>> r.sunion('s1', 's2', 's3')
         set([u'a', u'c', u'b'])
-        >>> 
+        >>>
         """
         self.connect()
         self._write('SUNION %s\r\n' % ' '.join(args))
@@ -878,7 +876,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         2
         >>> r.smembers('s4')
         set([u'a', u'b'])
-        >>> 
+        >>>
         """
         self.connect()
         self._write('SUNIONSTORE %s %s\r\n' % (dest, ' '.join(args)))
@@ -897,12 +895,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         >>> r.select(9)
         'OK'
         >>> r.get('a')
-        >>> 
+        >>>
         """
         self.connect()
         self._write('SELECT %s\r\n' % db)
         return self.get_response()
-    
+
     def move(self, name, db):
         """
         >>> r = Redis(db=9)
@@ -926,24 +924,24 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         u'a'
         >>> r.select(9)
         'OK'
-        >>> 
+        >>>
         """
         self.connect()
         self._write('MOVE %s %s\r\n' % (name, db))
         return self.get_response()
-    
+
     def flush(self, all_dbs=False):
         """
         >>> r = Redis(db=9)
         >>> r.flush()
         'OK'
         >>> # r.flush(all_dbs=True)
-        >>> 
+        >>>
         """
         self.connect()
         self._write('%s\r\n' % ('FLUSHALL' if all_dbs else 'FLUSHDB'))
         return self.get_response()
-    
+
     # Persistence control commands
     def save(self, background=False):
         """
@@ -956,7 +954,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         ...     assert str(e) == 'background save already in progress', str(e)
         ... else:
         ...     assert resp == 'OK'
-        >>> 
+        >>>
         """
         self.connect()
         if background:
@@ -964,7 +962,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         else:
             self._write('SAVE\r\n')
         return self.get_response()
-        
+
     def lastsave(self):
         """
         >>> import time
@@ -974,12 +972,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         'OK'
         >>> r.lastsave() >= t
         True
-        >>> 
+        >>>
         """
         self.connect()
         self._write('LASTSAVE\r\n')
         return self.get_response()
-    
+
     @defer.inlineCallbacks
     def info(self):
         """
@@ -989,7 +987,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         True
         >>> isinstance(info.get('connected_clients'), int)
         True
-        >>> 
+        >>>
         """
         self.connect()
         self._write('INFO\r\n')
@@ -1001,7 +999,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             k, v = l.split(':', 1)
             info[k] = int(v) if v.isdigit() else v
         defer.returnValue(info)
-    
+
     def sort(self, name, by=None, get=None, start=None, num=None, desc=False, alpha=False):
         """
         >>> r = Redis(db=9)
@@ -1039,7 +1037,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         [Decimal("99.5"), Decimal("99.0"), Decimal("99.6666666667"), Decimal("99.75")]
         >>> r.sort('l', desc=True, by='weight_*', get='missing_*')
         [None, None, None, None]
-        >>> 
+        >>>
         """
         stmt = ['SORT', name]
         if by:
@@ -1062,19 +1060,16 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self.connect()
         self._write(' '.join(stmt + ["\r\n"]))
         return self.get_response()
-    
+
     def auth(self, passwd):
         self.connect()
         self._write('AUTH %s\r\n' % passwd)
         return self.get_response()
-    
+
     def disconnect(self):
         """Don't need this with twisted.
         """
-            
+
     def connect(self):
         """Don't need this with twisted.
         """
-                
-
-    
