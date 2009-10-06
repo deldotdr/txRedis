@@ -18,25 +18,10 @@ import errno
 from twisted.internet import defer
 from twisted.internet import reactor
 from twisted.protocols import basic
+from twisted.protocols import policies
 
 BUFSIZE = 4096
 
-class Command(object):
-    """Based on twisted.protocols.memcache.Command
-    (initially just a copy)
-    """
-
-    def __init__(self, command, **kwargs):
-        self.command = command
-        self._deferred = defer.Deferred()
-        for k, v in kwargs.items():
-            setattr(self, k, v)
-
-    def success(self, value):
-        self._deferred.callback(value)
-
-    def fail(self, error):
-        self._deferred.errback(error)
 
 class RedisError(Exception): pass
 class ConnectionError(RedisError): pass
@@ -45,14 +30,26 @@ class InvalidResponse(RedisError): pass
 class InvalidData(RedisError): pass
 
 
-class Redis(basic.LineReceiver, basic.TimeoutMixin):
+class Redis(basic.LineReceiver, policies.TimeoutMixin):
     """The main Redis client.
     """
     
+    # States
+    READY = 0
+    SINGLE_LINE = 1
+    WAIT_BULK = 2
+    WAIT_MULTI = 3
+
+    state = READY
+
     def __init__(self, db=None, charset='utf8', errors='strict'):
         self.charset = charset
         self.errors = errors
         self.db = db
+
+        self._next_bulk_reply_len = None
+        self._multi_bulk_reply_len = None
+        self.resultQueue = defer.DeferredQueue()
         
     def _encode(self, s):
         if isinstance(s, str):
@@ -64,14 +61,102 @@ class Redis(basic.LineReceiver, basic.TimeoutMixin):
                 raise InvalidData("Error encoding unicode value '%s': %s" % (value.encode(self.charset, 'replace'), e))
         return str(s)
     
+    def _push_to_result(self, data):
+        """depending on the current reply state, add to the result and
+        decide if the deferred callback should be fired (result complete).
+        """
+        if self.state == self.SINGLE_LINE or self.WAIT_BULK:
+            self.result = data
+            self.finishResult()
+        if self.state == self.WAIT_MULTI:
+            self.result.append(data)
+            if len(self.result) == self._multi_bulk_reply_len:
+                self.finishResult()
+
+    def finishResult(self):
+        """fire deferred with current result, and rest current result
+        """
+        self.state = self.READY
+        res = self.result
+        self.resultQueue.put(res)
+        self.result = None
+
+    def lineReceived(self, line):
+        """
+        Simple state machine. 
+        States:
+         - Ready to receive 
+          o "-" error message
+          o "+" single line reply
+          o "$" bulk data
+          o "*" multi-bulk data
+          o ":" integer number
+         - Receiving 
+          o A single line
+          o Multiple lines
+        """
+        self.resetTimeout()
+        c = line[0]
+        if c == '-':
+            # return error for errback instead of raising...
+            self._push_to_result(ResponseError(line[5:] if line[:5] == '-ERR ' else line[1:]))
+            return
+        if c == '+':
+            self.state = self.SINGLE_LINE
+            self._push_to_result(line[1:])
+            return
+        if c == '*':
+            self.state = self.WAIT_MULTI
+            try:
+                self._multi_bulk_reply_len = int(line[1:])
+            except (TypeError, ValueError):
+                self._push_to_result(InvalidResponse("Cannot convert multi-response header '%s' to integer" % line))
+                return
+            self.result = list()
+            return
+        self.state = self.WAIT_BULK
+        return self._get_value(line)
+
+    def get_response(self):
+        """return deferred which will fire with response from server.
+        """
+        return self.resultQueue.get()
+
+    def _get_value(self, data):
+        """
+        get value of bulk data reply (or one line of multi bulk reply)
+        """
+        if self._next_bulk_reply_len is not None:
+            try:
+                self._push_to_result(int(data) if data.find('.') == -1 else decimal.Decimal(data))
+            except (ValueError, decimal.InvalidOperation):
+                self._push_to_result(data.decode(self.charset))
+            self._next_bulk_reply_len = None
+            return
+
+        if data == '$-1':
+            self._push_to_result(None)
+            return
+        try:
+            c, i = data[0], (int(data[1:]) if data.find('.') == -1 else float(data[1:]))
+        except ValueError:
+            self._push_to_result(InvalidResponse("Cannot convert data '%s' to integer" % data))
+            return
+        if c == ':':
+            self._push_to_result(i)
+            return 
+        if c == '$':
+            self._next_bulk_reply_len = i
+            return
+
+
+    
     def _write(self, s):
         """
+        XXX replace this with sendLine
         """
         self.transport.write(s)
             
-    def _read(self):
-        return data
-    
     def ping(self):
         """
         >>> r = Redis(db=9)
@@ -105,7 +190,6 @@ class Redis(basic.LineReceiver, basic.TimeoutMixin):
         Decimal("105.2")
         >>> 
         """
-        self.connect()
         # the following will raise an error for unicode values that can't be encoded to ascii
         # we could probably add an 'encoding' arg to init, but then what do we do with get()?
         # convert back to unicode? and what about ints, or pickled values?
@@ -952,97 +1036,13 @@ class Redis(basic.LineReceiver, basic.TimeoutMixin):
         self._write('AUTH %s\r\n' % passwd)
         return self.get_response()
     
-    # Protocol event handlers
-    # def get_response(self):
-    def lineReceived(self, data):
-        """
-        Simple state machine. 
-        States:
-         - Ready to receive 
-          o "-" error message
-          o "+" single line reply
-          o "$" bulk data
-          o "*" multi-bulk data
-          o ":" integer number
-         - Receiving 
-          o A single line
-          o Multiple lines
-        """
-        self.resetTimeout()
-        data = data.strip()
-        c = data[0]
-        if c == '-':
-            raise ResponseError(data[5:] if data[:5] == '-ERR ' else data[1:])
-        if c == '+':
-            return data[1:]
-        if c == '*':
-            try:
-                num = int(data[1:])
-            except (TypeError, ValueError):
-                raise InvalidResponse("Cannot convert multi-response header '%s' to integer" % data)
-            result = list()
-            for i in range(num):
-                result.append(self._get_value())
-            return result
-        return self._get_value(data)
-    
-    def _get_value(self, data=None):
-        data = data or self._read().strip()
-        if data == '$-1':
-            return None
-        try:
-            c, i = data[0], (int(data[1:]) if data.find('.') == -1 else float(data[1:]))
-        except ValueError:
-            raise InvalidResponse("Cannot convert data '%s' to integer" % data)
-        if c == ':':
-            return i
-        if c != '$':
-            raise InvalidResponse("Unkown response prefix for '%s'" % data)
-        buf = []
-        while True:
-            data = self._read()
-            i -= len(data)
-            buf.append(data)
-            if i < 0:
-                break
-        data = ''.join(buf)[:-2]
-        try:
-            return int(data) if data.find('.') == -1 else decimal.Decimal(data)
-        except (ValueError, decimal.InvalidOperation):
-            return data.decode(self.charset)
-    
     def disconnect(self):
-        if isinstance(self._sock, socket.socket):
-            try:
-                self._sock.close()
-            except socket.error:
-                pass
-        self._sock = None
-        self._fp = None
+        """Don't need this with twisted.
+        """
             
     def connect(self):
+        """Don't need this with twisted.
         """
-        >>> r = Redis(db=9)
-        >>> r.connect()
-        >>> isinstance(r._sock, socket.socket)
-        True
-        >>> r.disconnect()
-        >>> 
-        """
-        if isinstance(self._sock, socket.socket):
-            return
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.connect((self.host, self.port))
-        except socket.error, e:
-            raise ConnectionError("Error %s connecting to %s:%s. %s." % (e.args[0], self.host, self.port, e.args[1]))
-        else:
-            self._sock = sock
-            self._fp = self._sock.makefile('r')
-            if self.db:
-                self.select(self.db)
-            if self.nodelay is not None:
-                self._sock.setsockopt(socket.SOL_TCP, socket.TCP_NODELAY, self.nodelay)
                 
 
     
