@@ -1,12 +1,43 @@
 """ 
-A client for the Redis daemon.
-
-
 @file protocol.py
 @author Dorian Raymer
 @author Ludovico Magnocavallo
 @date 9/30/09
 @brief Twisted compatible version of redis.py
+
+@mainpage
+
+txRedis is an asynchronous, Twisted, version of redis.py (included in the
+redis server source).
+
+The official Redis Command Reference:
+http://code.google.com/p/redis/wiki/CommandReference
+
+@section An example demonstrating how to use the client in your code:
+@code
+from twisted.internet import reactor
+from twisted.internet import protocol
+from twisted.internet import defer
+
+from txredis.protocol import Redis
+
+@defer.inlineCallbacks
+def main():
+    clientCreator = protocol.ClientCreator(reactor, Redis)
+    redis = yield clientCreator.connectTCP(HOST, PORT)
+    
+    res = yield redis.ping()
+    print res
+
+    res = yield redis.set('test', 42)
+    print res
+    
+    test = yield redis.get('test')
+    print res
+
+@endcode
+
+Redis google code project: http://code.google.com/p/redis/
 """
 
 
