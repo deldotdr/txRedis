@@ -20,8 +20,6 @@ from twisted.internet import reactor
 from twisted.protocols import basic
 from twisted.protocols import policies
 
-BUFSIZE = 4096
-
 
 class RedisError(Exception): pass
 class ConnectionError(RedisError): pass
@@ -33,24 +31,155 @@ class InvalidData(RedisError): pass
 class Redis(basic.LineReceiver, policies.TimeoutMixin):
     """The main Redis client.
     """
-    
-    # States
-    READY = 0
-    SINGLE_LINE = 1
-    WAIT_BULK = 2
-    WAIT_MULTI = 3
+    bulk_length = 0
+    multi_bulk_length = 0
 
-    state = READY
+    ERROR = "-"
+    STATUS = "+"
+    INTEGER = ":"
+    BULK = "$"
+    MULTI_BULK = "*"
 
     def __init__(self, db=None, charset='utf8', errors='strict'):
         self.charset = charset
         self.errors = errors
         self.db = db
 
-        self._next_bulk_reply_len = None
-        self._multi_bulk_reply_len = None
-        self.resultQueue = defer.DeferredQueue()
+        self.multi_bulk_reply = []
+        self.replyQueue = defer.DeferredQueue()
         
+    def lineReceived(self, line):
+        """
+        Reply types:
+          "-" error message
+          "+" single line status reply
+          ":" integer number (protocol level only?)
+
+          "$" bulk data
+          "*" multi-bulk data
+        """
+        self.resetTimeout()
+        token = line[0] # first byte indicates reply type
+        data = line[1:]
+        if token == self.ERROR:
+            self.errorReceived(data)
+        elif token == self.STATUS:
+            self.statusReceived(data)
+        elif token == self.INTEGER:
+            self.integerReceived(data)
+        elif token == self.BULK:
+            try:
+                self.bulk_length = int(data)
+            except ValueError:
+                self.replyReceived(InvalidResponse("Cannot convert data '%s' to integer" % data))
+                return 
+            if self.bulk_length == -1:
+                self.bulkDataReceived(None)
+                return
+            else:
+                self.setRawMode()
+        elif token == self.MULTI_BULK:
+            try:
+                self.multi_bulk_length = int(data)
+            except (TypeError, ValueError):
+                self.replyReceived(InvalidResponse("Cannot convert multi-response header '%s' to integer" % data))
+                self.multi_bulk_length = 0
+                return
+            if self.multi_bulk_length == -1:
+                self.multi_bulk_reply = None
+                self.multiBulkDataReceived()
+                return
+            elif self.multi_bulk_length == 0:
+                self.multiBulkDataReceived()
+ 
+
+    def rawDataReceived(self, data):
+        """
+        Process and dispatch to bulkDataReceived.
+        """
+        reply_len = self.bulk_length 
+        bulk_data = data[:reply_len]
+        rest_data = data[reply_len + 2:]
+        self.bulkDataReceived(bulk_data)
+        self.setLineMode(extra=rest_data)
+
+    def errorReceived(self, data):
+        """
+        Error from server.
+        """
+        reply = ResponseError(data[4:] if data[:4] == 'ERR ' else data)
+        self.replyReceived(reply)
+
+    def statusReceived(self, data):
+        """
+        Single line status should always be a string.
+        """
+        if data == 'none':
+            reply = None # should this happen here in the client?
+        else:
+            reply = data 
+        self.replyReceived(reply)
+
+    def integerReceived(self, data):
+        """
+        For handling integer replies.
+        """
+        try:
+            reply = int(data) 
+        except ValueError:
+            reply = InvalidResponse("Cannot convert data '%s' to integer" % data)
+        self.replyReceived(reply)
+
+
+    def bulkDataReceived(self, data):
+        """
+        Receipt of a bulk data element.
+        """
+        self.bulk_length = 0
+        if data is None:
+            element = data
+        else:
+            try:
+                element = int(data) if data.find('.') == -1 else decimal.Decimal(data)
+            except (ValueError, decimal.InvalidOperation):
+                element = data.decode(self.charset)
+
+        if self.multi_bulk_length > 0:
+            self.handleMultiBulkElement(element)
+            return
+        else:
+            self.replyReceived(element)
+
+    def handleMultiBulkElement(self, element):
+        self.multi_bulk_reply.append(element)
+        self.multi_bulk_length = self.multi_bulk_length - 1
+        if self.multi_bulk_length == 0:
+            self.multiBulkDataReceived()
+
+
+    def multiBulkDataReceived(self):
+        """
+        Receipt of list or set of bulk data elements.
+        """
+        reply = self.multi_bulk_reply
+        self.multi_bulk_reply = []
+        self.multi_bulk_length = 0
+        self.replyReceived(reply)
+        
+
+    def replyReceived(self, reply):
+        """
+        Complete reply received and ready to be pushed to the requesting
+        function.
+        """
+        self.replyQueue.put(reply)
+
+
+    def get_response(self):
+        """return deferred which will fire with response from server.
+        """
+        return self.replyQueue.get()
+
     def _encode(self, s):
         if isinstance(s, str):
             return s
@@ -58,111 +187,11 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             try:
                 return s.encode(self.charset, self.errors)
             except UnicodeEncodeError, e:
-                raise InvalidData("Error encoding unicode value '%s': %s" % (value.encode(self.charset, 'replace'), e))
+                raise InvalidData("Error encoding unicode value '%s': %s" % (s.encode(self.charset, 'replace'), e))
         return str(s)
-    
-    def _push_to_result(self, data):
-        """depending on the current reply state, add to the result and
-        decide if the deferred callback should be fired (result complete).
-        """
-        # Redis to Python Type converter
-        if data == 'none':
-            data = None
-        if self.state == self.WAIT_MULTI:
-            self.result.append(data)
-            if len(self.result) >= self._multi_bulk_reply_len:
-                self.finishResult()
-        else:
-            self.result = data
-            self.finishResult()
-
-    def finishResult(self):
-        """fire deferred with current result, and rest current result
-        """
-        self.state = self.READY
-        res = self.result
-        self.resultQueue.put(res)
-        self.result = None
-
-    def lineReceived(self, line):
-        """
-        Simple state machine. 
-        States:
-         - Ready to receive 
-          o "-" error message
-          o "+" single line reply
-          o "$" bulk data
-          o "*" multi-bulk data
-          o ":" integer number
-         - Receiving 
-          o A single line
-          o Multiple lines
-        """
-        self.resetTimeout()
-        c = line[0]
-        if c == '-':
-            # return error for errback instead of raising...
-            self._push_to_result(ResponseError(line[5:] if line[:5] == '-ERR ' else line[1:]))
-            return
-        if c == '+':
-            self.state = self.SINGLE_LINE
-            self._push_to_result(line[1:])
-            return
-        if c == '*':
-            try:
-                self._multi_bulk_reply_len = int(line[1:])
-                if self._multi_bulk_reply_len == -1:
-                    self._push_to_result(None)
-                    return
-                if self._multi_bulk_reply_len == 0:
-                    self._push_to_result([])
-                    return
-                self.state = self.WAIT_MULTI
-            except (TypeError, ValueError):
-                self._push_to_result(InvalidResponse("Cannot convert multi-response header '%s' to integer" % line))
-                return
-            self.result = list()
-            return
-        return self._get_value(line)
-
-    def _get_value(self, data):
-        """
-        get value of bulk data reply (or one line of multi bulk reply)
-        """
-        if self._next_bulk_reply_len is not None:
-            try:
-                self._push_to_result(int(data) if data.find('.') == -1 else decimal.Decimal(data))
-            except (ValueError, decimal.InvalidOperation):
-                self._push_to_result(data.decode(self.charset))
-            self._next_bulk_reply_len = None
-            return
-
-        if data == '$-1':
-            self._push_to_result(None)
-            return
-        try:
-            c, i = data[0], (int(data[1:]) if data.find('.') == -1 else float(data[1:]))
-        except ValueError:
-            self._push_to_result(InvalidResponse("Cannot convert data '%s' to integer" % data))
-            return
-        if c == ':':
-            self._push_to_result(i)
-            return 
-        if c == '$':
-            self._next_bulk_reply_len = i
-            if i == 0:
-                self._push_to_result('')
-            return
-
-    def get_response(self):
-        """return deferred which will fire with response from server.
-        """
-        return self.resultQueue.get()
-
     
     def _write(self, s):
         """
-        XXX replace this with sendLine
         """
         self.transport.write(s)
             
@@ -995,10 +1024,11 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write('INFO\r\n')
         info = dict()
         res = yield self.get_response()
-        for l in res.split('\r\n'):
+        res = res.split('\r\n')
+        for l in res:
             if not l:
                 continue
-            k, v = l.split(':', 1)
+            k, v = l.split(':')
             info[k] = int(v) if v.isdigit() else v
         defer.returnValue(info)
     

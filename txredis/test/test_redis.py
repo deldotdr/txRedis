@@ -13,7 +13,7 @@ from txredis.protocol import ResponseError
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
 
-class RedisTestBase(unittest.TestCase):
+class RedisCommandsTestBase(unittest.TestCase):
 
 
     @defer.inlineCallbacks
@@ -53,7 +53,6 @@ class RedisTestBase(unittest.TestCase):
     def test_get(self):
         r = self.redis
         t = self.assertEqual
-
         
         a = yield r.set('a', 'pippo')
         t(a, 'OK')
@@ -718,6 +717,7 @@ class RedisTestBase(unittest.TestCase):
         r = self.redis
         t = self.assertEqual
 
+        yield r.select(9)
         yield r.delete('a')
         a = yield r.select(10)
         ex = 'OK'
@@ -737,6 +737,7 @@ class RedisTestBase(unittest.TestCase):
         r = self.redis
         t = self.assertEqual
 
+        yield r.select(9)
         a = yield r.set('a', 'a')
         ex = 'OK'
         t(a, ex)
