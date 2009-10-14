@@ -42,10 +42,8 @@ Redis google code project: http://code.google.com/p/redis/
 
 
 import decimal
-import errno
 
 from twisted.internet import defer
-from twisted.internet import reactor
 from twisted.protocols import basic
 from twisted.protocols import policies
 
