@@ -6,3 +6,9 @@ txRedis is an asynchronous version of Ludovico Magnocavallo's redis.py
 
 txRedis.protocol.Redis is an implementation of
 twisted.internet.protocol.Protocol. 
+
+
+Dependencies
+------------
+
+Twisted

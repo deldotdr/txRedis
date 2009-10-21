@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 sdict = {
     'name' : 'txredis',
-    'version' : '0.2.0',
+    'version' : '0.1.1',
 	'packages' : ['txredis'],
     'description' : 'Python/Twisted client for Redis key-value store',
     'url': 'http://amoeba.ucsd.edu/packages/txredis/',
-    'download_url' : 'http://amoeba.ucsd.edu/packages/txredis/txredis-0.2.0.tar.gz',
+    'download_url' : 'http://amoeba.ucsd.edu/packages/txredis/txredis-0.1.1.tar.gz',
     'author' : 'Dorian Raymer',
     'author_email' : 'deldotdr@gmail.com',
     'maintainer' : 'Dorian Raymer',
@@ -15,9 +15,11 @@ sdict = {
         'Development Status :: 4 - Beta',
         'Environment :: Console',
         'Intended Audience :: Developers',
-        'License :: OSI Approved :: MIT License',
+        'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
-        'Programming Language :: Python'],
+        'Programming Language :: Python',
+        'Framework :: Twisted',
+        ],
 }
 
 from distutils.core import setup
