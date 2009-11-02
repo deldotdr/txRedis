@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 sdict = {
     'name' : 'txredis',
-    'version' : '0.1.1',
+    'version' : '0.1.2',
 	'packages' : ['txredis'],
     'description' : 'Python/Twisted client for Redis key-value store',
     'url': 'http://ooici.net/packages/txredis/',
