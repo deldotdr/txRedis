@@ -86,6 +86,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
           "*" multi-bulk data
         """
         self.resetTimeout()
+        if len(line) == 0:
+            return
         token = line[0] # first byte indicates reply type
         data = line[1:]
         if token == self.ERROR:
@@ -123,6 +125,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
     def rawDataReceived(self, data):
         """
         Process and dispatch to bulkDataReceived.
+        @todo buffer raw data in case a bulk piece comes in more than one
+        part
         """
         reply_len = self.bulk_length 
         bulk_data = data[:reply_len]
@@ -429,6 +433,14 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write('SREM %s %s\r\n%s\r\n' % (
             name, len(value), value
         ))
+        return self.get_response()
+
+    def spop(self, name):
+        self._write('SPOP %s\r\n' % name)
+        return self.get_response()
+
+    def scard(self, name):
+        self._write('SCARD %s\r\n' % name)
         return self.get_response()
     
     def sismember(self, name, value):

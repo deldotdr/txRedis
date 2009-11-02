@@ -565,6 +565,37 @@ class RedisCommandsTestBase(unittest.TestCase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_spop(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.delete('s')
+
+        a = yield r.sadd('s', 'a')
+        ex = 1
+        t(a, ex)
+
+        a = yield r.spop('s')
+        ex = u'a'
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_scard(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.delete('s')
+
+        a = yield r.sadd('s', 'a')
+        ex = 1
+        t(a, ex)
+
+        a = yield r.scard('s')
+        ex = 1
+        t(a, ex)
+
+
+    @defer.inlineCallbacks
     def test_sismember(self):
         r = self.redis
         t = self.assertEqual
@@ -867,3 +898,21 @@ class RedisCommandsTestBase(unittest.TestCase):
         ex = [None, None, None, None]
         t(a, ex)
  
+    @defer.inlineCallbacks
+    def test_large_values(self):
+        import uuid
+        import random
+        r = self.redis
+        t = self.assertEqual
+
+        for i in range(5):
+            key = str(uuid.uuid4())
+            value = random.randrange(10**40000, 11**40000)
+            a = yield r.set(key, value)
+            t('OK', a)
+            rval = yield r.get(key)
+            t(value, rval)
+
+
+
+
