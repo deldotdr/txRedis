@@ -5,7 +5,7 @@ sdict = {
 	'packages' : ['txredis'],
     'description' : 'Python/Twisted client for Redis key-value store',
     'url': 'http://ooici.net/packages/txredis/',
-    'download_url' : 'http://ooici.net/packages/txredis/txredis-0.1.1.tar.gz',
+    'download_url' : 'http://ooici.net/packages/txredis/txredis-0.1.2.tar.gz',
     'author' : 'Dorian Raymer',
     'author_email' : 'deldotdr@gmail.com',
     'maintainer' : 'Dorian Raymer',
