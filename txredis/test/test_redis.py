@@ -23,14 +23,14 @@ class CommandsTestBase(unittest.TestCase):
     def tearDown(self):
         self.redis.transport.loseConnection()
 
+class General(CommandsTestBase):
+    """Test commands that operate on any type of redis value.
+    """
+
     @defer.inlineCallbacks
     def test_ping(self):
         a = yield self.redis.ping()
         self.assertEqual(a, 'PONG')
-
-class General(CommandsTestBase):
-    """Test commands that operate on any type of redis value.
-    """
 
     @defer.inlineCallbacks
     def test_exists(self):
@@ -501,7 +501,7 @@ class Lists(CommandsTestBase):
 
         a = yield r.delete('l')
         a = yield r.ltrim('l', 0, 1)
-        ex = ResponseError('no such key')
+        ex = ResponseError('OK')
         t(str(a), str(ex))
         a = yield r.push('l', 'aaa')
         ex = 'OK'
@@ -644,26 +644,6 @@ class Lists(CommandsTestBase):
         ex = 0
         t(a, ex)
 
-class BlockingListOperartions(CommandsTestBase):
-
-    @defer.inlineCallbacks
-    def test_bpop(self):
-        r = self.redis
-        t = self.assertEqual
-
-        yield r.delete('test.list.a')
-        yield r.delete('test.list.b')
-        yield r.push('test.list.a', 'stuff')
-        yield r.push('test.list.a', 'things')
-        yield r.push('test.list.b', 'spam')
-
-        yield r.push('test.list.b', 'bee')
-        yield r.push('test.list.b', 'honey')
-
-        a = yield r.bpop(['test.list.a', 'test.list.b'])
-        ex = ['test.list.a', 'stuff'] 
-        t(a, ex)
-
 class Sets(CommandsTestBase):
     """Test commands that operate on sets.
     """
@@ -768,7 +748,7 @@ class Sets(CommandsTestBase):
         ex = 1
         t(a, ex)
         a = yield r.sinter()
-        ex = ResponseError('wrong number of arguments')
+        ex = ResponseError("wrong number of arguments for 'sinter' command")
         t(str(a), str(ex))
         a = yield r.sinter('l')
         ex = ResponseError('Operation against a key holding the wrong kind of value')
