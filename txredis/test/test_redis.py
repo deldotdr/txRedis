@@ -13,8 +13,7 @@ from txredis.protocol import ResponseError
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
 
-class RedisCommandsTestBase(unittest.TestCase):
-
+class CommandsTestBase(unittest.TestCase):
 
     @defer.inlineCallbacks
     def setUp(self):
@@ -28,6 +27,270 @@ class RedisCommandsTestBase(unittest.TestCase):
     def test_ping(self):
         a = yield self.redis.ping()
         self.assertEqual(a, 'PONG')
+
+class General(CommandsTestBase):
+    """Test commands that operate on any type of redis value.
+    """
+
+    @defer.inlineCallbacks
+    def test_exists(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.exists('dsjhfksjdhfkdsjfh')
+        ex = 0
+        t(a, ex)
+        a = yield r.set('a', 'a')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.exists('a')
+        ex = 1
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_delete(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.delete('dsjhfksjdhfkdsjfh')
+        ex = 0
+        t(a, ex)
+        a = yield r.set('a', 'a')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.delete('a')
+        ex = 1
+        t(a, ex)
+        a = yield r.exists('a')
+        ex = 0
+        t(a, ex)
+        a = yield r.delete('a')
+        ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_get_type(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.set('a', 3)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.get_type('a')
+        ex = 'string'
+        t(a, ex)
+        a = yield r.get_type('zzz')
+        ex = None
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_keys(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.flush()
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.set('a', 'a')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.keys('a*')
+        ex = [u'a']
+        t(a, ex)
+        a = yield r.set('a2', 'a')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.keys('a*')
+        ex = [u'a', u'a2']
+        t(a, ex)
+        a = yield r.delete('a2')
+        ex = 1
+        t(a, ex)
+        a = yield r.keys('sjdfhskjh*')
+        ex = []
+        t(a, ex)
+ 
+    @defer.inlineCallbacks
+    def test_randomkey(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.set('a', 'a')
+        ex = 'OK'
+        t(a, ex)
+        a = yield isinstance((yield r.randomkey()), str)
+        ex = True
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_rename(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.rename('a', 'a')
+        ex = ResponseError('source and destination objects are the same') 
+        t(str(a), str(ex))
+        a = yield r.rename('a', 'b')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.rename('a', 'b')
+        ex = ResponseError('no such key')
+        t(str(a), str(ex))
+        a = yield r.set('a', 1)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.rename('b', 'a', preserve=True)
+        ex = 0
+        t(a, ex)
+ 
+    @defer.inlineCallbacks
+    def test_dbsize(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = type((yield r.dbsize()))
+        ex = int
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_expire(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.set('a', 1)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.expire('a', 1)
+        ex = 1
+        t(a, ex)
+        a = yield r.expire('zzzzz', 1)
+        ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_ttl(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.ttl('a')
+        ex = -1
+        t(a, ex)
+        a = yield r.expire('a', 10)
+        ex = 1
+        t(a, ex)
+        a = yield r.ttl('a')
+        ex = 10
+        t(a, ex)
+        a = yield r.expire('a', 0)
+        ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_select(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.select(9)
+        yield r.delete('a')
+        a = yield r.select(10)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.set('a', 1)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.select(9)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.get('a')
+        ex = None
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_move(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.select(9)
+        a = yield r.set('a', 'a')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.select(10)
+        ex = 'OK'
+        t(a, ex)
+        if (yield r.get('a')):
+            yield r.delete('a')
+        a = yield r.select(9)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.move('a', 10)
+        ex = 1
+        t(a, ex)
+        yield r.get('a')
+        a = yield r.select(10)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.get('a')
+        ex = u'a'
+        t(a, ex)
+        a = yield r.select(9)
+        ex = 'OK'
+        t(a, ex)
+ 
+    @defer.inlineCallbacks
+    def test_flush(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.flush()
+        ex = 'OK'
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_save(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.save()
+        ex = 'OK'
+        t(a, ex)
+        resp = yield r.save(background=True)
+        """
+        ex = ResponseError(
+        ...     assert str(e) == 'background save already in progress', str(e)
+        ... else:
+        ...     assert resp == 'OK'
+        """
+ 
+    @defer.inlineCallbacks
+    def test_lastsave(self):
+        r = self.redis
+        t = self.assertEqual
+
+        tme = int(time.time())
+        a = yield r.save()
+        ex = 'OK'
+        t(a, ex)
+        a = (yield r.lastsave()) >= tme
+        ex = True
+        t(a, ex)
+ 
+    @defer.inlineCallbacks
+    def test_info(self):
+        r = self.redis
+        t = self.assertEqual
+
+        info = yield r.info()
+        a = info and isinstance(info, dict)
+        ex = True
+        t(a, ex)
+        a = isinstance((yield info.get('connected_clients')), int)
+        ex = True
+        t(a, ex)
+ 
+
+class Strings(CommandsTestBase):
+    """Test commands that operate on string values.
+    """
 
     @defer.inlineCallbacks
     def test_set(self):
@@ -160,161 +423,10 @@ class RedisCommandsTestBase(unittest.TestCase):
         ex = -7
         t(a, ex)
 
-    @defer.inlineCallbacks
-    def test_exists(self):
-        r = self.redis
-        t = self.assertEqual
 
-        a = yield r.exists('dsjhfksjdhfkdsjfh')
-        ex = 0
-        t(a, ex)
-        a = yield r.set('a', 'a')
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.exists('a')
-        ex = 1
-        t(a, ex)
-
-
-    @defer.inlineCallbacks
-    def test_delete(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = yield r.delete('dsjhfksjdhfkdsjfh')
-        ex = 0
-        t(a, ex)
-        a = yield r.set('a', 'a')
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.delete('a')
-        ex = 1
-        t(a, ex)
-        a = yield r.exists('a')
-        ex = 0
-        t(a, ex)
-        a = yield r.delete('a')
-        ex = 0
-        t(a, ex)
-
-
-    @defer.inlineCallbacks
-    def test_get_type(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = yield r.set('a', 3)
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.get_type('a')
-        ex = 'string'
-        t(a, ex)
-        a = yield r.get_type('zzz')
-        ex = None
-        t(a, ex)
-
-    @defer.inlineCallbacks
-    def test_keys(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = yield r.flush()
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.set('a', 'a')
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.keys('a*')
-        ex = [u'a']
-        t(a, ex)
-        a = yield r.set('a2', 'a')
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.keys('a*')
-        ex = [u'a', u'a2']
-        t(a, ex)
-        a = yield r.delete('a2')
-        ex = 1
-        t(a, ex)
-        a = yield r.keys('sjdfhskjh*')
-        ex = []
-        t(a, ex)
- 
-
-    @defer.inlineCallbacks
-    def test_randomkey(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = yield r.set('a', 'a')
-        ex = 'OK'
-        t(a, ex)
-        a = yield isinstance((yield r.randomkey()), str)
-        ex = True
-        t(a, ex)
-
-    @defer.inlineCallbacks
-    def test_rename(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = yield r.rename('a', 'a')
-        ex = ResponseError('source and destination objects are the same') 
-        t(str(a), str(ex))
-        a = yield r.rename('a', 'b')
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.rename('a', 'b')
-        ex = ResponseError('no such key')
-        t(str(a), str(ex))
-        a = yield r.set('a', 1)
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.rename('b', 'a', preserve=True)
-        ex = 0
-        t(a, ex)
- 
-    @defer.inlineCallbacks
-    def test_dbsize(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = type((yield r.dbsize()))
-        ex = int
-        t(a, ex)
-
-    @defer.inlineCallbacks
-    def test_expire(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = yield r.set('a', 1)
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.expire('a', 1)
-        ex = 1
-        t(a, ex)
-        a = yield r.expire('zzzzz', 1)
-        ex = 0
-        t(a, ex)
-
-    @defer.inlineCallbacks
-    def test_ttl(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = yield r.ttl('a')
-        ex = -1
-        t(a, ex)
-        a = yield r.expire('a', 10)
-        ex = 1
-        t(a, ex)
-        a = yield r.ttl('a')
-        ex = 10
-        t(a, ex)
-        a = yield r.expire('a', 0)
-        ex = 0
-        t(a, ex)
+class Lists(CommandsTestBase):
+    """Test commands that operate on lists.
+    """
 
     @defer.inlineCallbacks
     def test_push(self):
@@ -532,6 +644,30 @@ class RedisCommandsTestBase(unittest.TestCase):
         ex = 0
         t(a, ex)
 
+class BlockingListOperartions(CommandsTestBase):
+
+    @defer.inlineCallbacks
+    def test_bpop(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('test.list.a')
+        yield r.delete('test.list.b')
+        yield r.push('test.list.a', 'stuff')
+        yield r.push('test.list.a', 'things')
+        yield r.push('test.list.b', 'spam')
+
+        yield r.push('test.list.b', 'bee')
+        yield r.push('test.list.b', 'honey')
+
+        a = yield r.bpop(['test.list.a', 'test.list.b'])
+        ex = ['test.list.a', 'stuff'] 
+        t(a, ex)
+
+class Sets(CommandsTestBase):
+    """Test commands that operate on sets.
+    """
+
     @defer.inlineCallbacks
     def test_sadd(self):
         r = self.redis
@@ -743,108 +879,7 @@ class RedisCommandsTestBase(unittest.TestCase):
         ex = set([u'a', u'b'])
         t(a, ex)
  
-    @defer.inlineCallbacks
-    def test_select(self):
-        r = self.redis
-        t = self.assertEqual
 
-        yield r.select(9)
-        yield r.delete('a')
-        a = yield r.select(10)
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.set('a', 1)
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.select(9)
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.get('a')
-        ex = None
-        t(a, ex)
-
-    @defer.inlineCallbacks
-    def test_move(self):
-        r = self.redis
-        t = self.assertEqual
-
-        yield r.select(9)
-        a = yield r.set('a', 'a')
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.select(10)
-        ex = 'OK'
-        t(a, ex)
-        if (yield r.get('a')):
-            yield r.delete('a')
-        a = yield r.select(9)
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.move('a', 10)
-        ex = 1
-        t(a, ex)
-        yield r.get('a')
-        a = yield r.select(10)
-        ex = 'OK'
-        t(a, ex)
-        a = yield r.get('a')
-        ex = u'a'
-        t(a, ex)
-        a = yield r.select(9)
-        ex = 'OK'
-        t(a, ex)
- 
-    @defer.inlineCallbacks
-    def test_flush(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = yield r.flush()
-        ex = 'OK'
-        t(a, ex)
-
-    @defer.inlineCallbacks
-    def test_save(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = yield r.save()
-        ex = 'OK'
-        t(a, ex)
-        resp = yield r.save(background=True)
-        """
-        ex = ResponseError(
-        ...     assert str(e) == 'background save already in progress', str(e)
-        ... else:
-        ...     assert resp == 'OK'
-        """
- 
-    @defer.inlineCallbacks
-    def test_lastsave(self):
-        r = self.redis
-        t = self.assertEqual
-
-        tme = int(time.time())
-        a = yield r.save()
-        ex = 'OK'
-        t(a, ex)
-        a = (yield r.lastsave()) >= tme
-        ex = True
-        t(a, ex)
- 
-    @defer.inlineCallbacks
-    def test_info(self):
-        r = self.redis
-        t = self.assertEqual
-
-        info = yield r.info()
-        a = info and isinstance(info, dict)
-        ex = True
-        t(a, ex)
-        a = isinstance((yield info.get('connected_clients')), int)
-        ex = True
-        t(a, ex)
- 
     @defer.inlineCallbacks
     def test_sort(self):
         r = self.redis

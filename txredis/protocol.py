@@ -1,5 +1,12 @@
 """ 
 @file protocol.py
+
+@author Dorian Raymer
+@data 02/01/10
+Added BLPOP/BRPOP and RPOPLPUSH to list commands.
+Added doc strings to list commands (copied from the Redis google code
+project page).
+
 @author Dorian Raymer
 @author Ludovico Magnocavallo
 @date 9/30/09
@@ -38,6 +45,8 @@ def main():
 @endcode
 
 Redis google code project: http://code.google.com/p/redis/
+Command doc strings taken from the CommandReference wiki page.
+
 """
 
 
@@ -207,7 +216,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
 
 
     def get_response(self):
-        """return deferred which will fire with response from server.
+        """
+        @retval a deferred which will fire with response from server.
         """
         return self.replyQueue.get()
 
@@ -238,7 +248,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
     # 
 
     # Commands operating on string values
-    def set(self, name, value, preserve=False, getset=False):
+    def set(self, key, value, preserve=False, getset=False):
         """
         """
         # the following will raise an error for unicode values that can't be encoded to ascii
@@ -249,20 +259,20 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         else: command = 'SET'
         value = self._encode(value)
         self._write('%s %s %s\r\n%s\r\n' % (
-                command, name, len(value), value
+                command, key, len(value), value
             ))
         return self.get_response()
     
-    def get(self, name):
+    def get(self, key):
         """
         """
-        self._write('GET %s\r\n' % name)
+        self._write('GET %s\r\n' % key)
         return self.get_response()
     
-    def getset(self, name, value):
+    def getset(self, key, value):
         """
         """
-        return self.set(name, value, getset=True)
+        return self.set(key, value, getset=True)
         
     def mget(self, *args):
         """
@@ -270,40 +280,40 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write('MGET %s\r\n' % ' '.join(args))
         return self.get_response()
     
-    def incr(self, name, amount=1):
+    def incr(self, key, amount=1):
         """
         """
         if amount == 1:
-            self._write('INCR %s\r\n' % name)
+            self._write('INCR %s\r\n' % key)
         else:
-            self._write('INCRBY %s %s\r\n' % (name, amount))
+            self._write('INCRBY %s %s\r\n' % (key, amount))
         return self.get_response()
 
-    def decr(self, name, amount=1):
+    def decr(self, key, amount=1):
         """
         """
         if amount == 1:
-            self._write('DECR %s\r\n' % name)
+            self._write('DECR %s\r\n' % key)
         else:
-            self._write('DECRBY %s %s\r\n' % (name, amount))
+            self._write('DECRBY %s %s\r\n' % (key, amount))
         return self.get_response()
     
-    def exists(self, name):
+    def exists(self, key):
         """
         """
-        self._write('EXISTS %s\r\n' % name)
+        self._write('EXISTS %s\r\n' % key)
         return self.get_response()
 
-    def delete(self, name):
+    def delete(self, key):
         """
         """
-        self._write('DEL %s\r\n' % name)
+        self._write('DEL %s\r\n' % key)
         return self.get_response()
 
-    def get_type(self, name):
+    def get_type(self, key):
         """
         """
-        self._write('TYPE %s\r\n' % name)
+        self._write('TYPE %s\r\n' % key)
         res = self.get_response()
         # return None if res == 'none' else res
         return res
@@ -346,109 +356,340 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write('DBSIZE\r\n')
         return self.get_response()
     
-    def expire(self, name, time):
+    def expire(self, key, time):
         """
         """
-        self._write('EXPIRE %s %s\r\n' % (name, time))
+        self._write('EXPIRE %s %s\r\n' % (key, time))
         return self.get_response()
     
-    def ttl(self, name):
+    def ttl(self, key):
         """
         """
-        self._write('TTL %s\r\n' % name)
+        self._write('TTL %s\r\n' % key)
         return self.get_response()
     
-    # Commands operating on lists
-    def push(self, name, value, tail=False):
+    # # # # # # # # #   
+    # List Commands:
+    # RPUSH
+    # LPUSH
+    # LLEN
+    # LRANGE
+    # LTRIM
+    # LINDEX
+    # LSET
+    # LREM
+    # LPOP
+    # RPOP
+    # BLPOP
+    # BRPOP
+    # RPOPLPUSH
+    # SORT
+
+    def push(self, key, value, tail=False):
         """
+        @param key Redis key
+        @param value String element of list
+        
+        Add the string value to the head (RPUSH) or tail (LPUSH) of the
+        list stored at key key. If the key does not exist an empty list is
+        created just before the append operation. If the key exists but is
+        not a List an error is returned.
+
+        @note Time complexity: O(1)
         """
         value = self._encode(value)
         self._write('%s %s %s\r\n%s\r\n' % (
-            'LPUSH' if tail else 'RPUSH', name, len(value), value
+            'LPUSH' if tail else 'RPUSH', key, len(value), value
         ))
         return self.get_response()
     
-    def llen(self, name):
+    def llen(self, key):
         """
+        @param key Redis key
+
+        Return the length of the list stored at the key key. If the
+        key does not exist zero is returned (the same behavior as for
+        empty lists). If the value stored at key is not a list an error is
+        returned.
+
+        @note Time complexity: O(1)
         """
-        self._write('LLEN %s\r\n' % name)
+        self._write('LLEN %s\r\n' % key)
         return self.get_response()
 
-    def lrange(self, name, start, end):
+    def lrange(self, key, start, end):
         """
+        @param key Redis key
+        @param start first element
+        @param end last element
+
+        Return the specified elements of the list stored at the key key. 
+        Start and end are zero-based indexes. 0 is the first element
+        of the list (the list head), 1 the next element and so on.
+        For example LRANGE foobar 0 2 will return the first three elements
+        of the list.
+        start and end can also be negative numbers indicating offsets from
+        the end of the list. For example -1 is the last element of the
+        list, -2 the penultimate element and so on.
+        Indexes out of range will not produce an error: if start is over
+        the end of the list, or start > end, an empty list is returned. If
+        end is over the end of the list Redis will threat it just like the
+        last element of the list.
+
+        @note Time complexity: O(n) (with n being the length of the range)
         """
-        self._write('LRANGE %s %s %s\r\n' % (name, start, end))
+        self._write('LRANGE %s %s %s\r\n' % (key, start, end))
         return self.get_response()
         
-    def ltrim(self, name, start, end):
+    def ltrim(self, key, start, end):
         """
+        @param key Redis key
+        @param start first element
+        @param end last element
+
+        Trim an existing list so that it will contain only the specified
+        range of elements specified. Start and end are zero-based indexes.
+        0 is the first element of the list (the list head), 1 the next
+        element and so on.
+        For example LTRIM foobar 0 2 will modify the list stored at foobar
+        key so that only the first three elements of the list will remain.
+        start and end can also be negative numbers indicating offsets from
+        the end of the list. For example -1 is the last element of the
+        list, -2 the penultimate element and so on.
+        Indexes out of range will not produce an error: if start is over
+        the end of the list, or start > end, an empty list is left as
+        value. If end over the end of the list Redis will threat it just
+        like the last element of the list.
+
+        @note Time complexity: O(n) (with n being len of list - len of range)
         """
-        self._write('LTRIM %s %s %s\r\n' % (name, start, end))
+        self._write('LTRIM %s %s %s\r\n' % (key, start, end))
         return self.get_response()
     
-    def lindex(self, name, index):
+    def lindex(self, key, index):
         """
+        @param key Redis key
+        @param index index of element
+
+        Return the specified element of the list stored at the specified
+        key. 0 is the first element, 1 the second and so on. Negative
+        indexes are supported, for example -1 is the last element, -2 the
+        penultimate and so on.
+        If the value stored at key is not of list type an error is
+        returned. If the index is out of range an empty string is returned.
+
+        @note Time complexity: O(n) (with n being the length of the list)
+        Note that even if the average time complexity is O(n) asking for
+        the first or the last element of the list is O(1).
         """
-        self._write('LINDEX %s %s\r\n' % (name, index))
+        self._write('LINDEX %s %s\r\n' % (key, index))
         return self.get_response()
         
-    def pop(self, name, tail=False):
+    def pop(self, key, tail=False):
         """
+        @param key Redis key
+        @param tail pop element from tail instead of head
+
+        Atomically return and remove the first (LPOP) or last (RPOP)
+        element of the list. For example if the list contains the elements
+        "a","b","c" LPOP will return "a" and the list will become "b","c".
+        If the key does not exist or the list is already empty the special
+        value 'nil' is returned.
         """
-        self._write('%s %s\r\n' % ('RPOP' if tail else 'LPOP', name))
+        self._write('%s %s\r\n' % ('RPOP' if tail else 'LPOP', key))
         return self.get_response()
-    
-    def lset(self, name, index, value):
+
+    def bpop(self, keys, tail=False, timeout=30):
         """
+        @param keys a list of one or more Redis keys of non-empty list(s)
+        @param tail pop element from tail instead of head
+        @param timeout max number of seconds block for (0 is forever)
+
+        BLPOP (and BRPOP) is a blocking list pop primitive. You can see
+        this commands as blocking versions of LPOP and RPOP able to block
+        if the specified keys don't exist or contain empty lists.
+        The following is a description of the exact semantic. We
+        describe BLPOP but the two commands are identical, the only
+        difference is that BLPOP pops the element from the left (head)
+        of the list, and BRPOP pops from the right (tail).
+
+        Non blocking behavior
+        When BLPOP is called, if at least one of the specified keys
+        contain a non empty list, an element is popped from the head of
+        the list and returned to the caller together with the name of
+        the key (BLPOP returns a two elements array, the first element
+        is the key, the second the popped value).
+        Keys are scanned from left to right, so for instance if you
+        issue BLPOP list1 list2 list3 0 against a dataset where list1
+        does not exist but list2 and list3 contain non empty lists,
+        BLPOP guarantees to return an element from the list stored at
+        list2 (since it is the first non empty list starting from the
+        left).
+
+        Blocking behavior
+        If none of the specified keys exist or contain non empty lists,
+        BLPOP blocks until some other client performs a LPUSH or an
+        RPUSH operation against one of the lists.
+        Once new data is present on one of the lists, the client
+        finally returns with the name of the key unblocking it and the
+        popped value.
+        When blocking, if a non-zero timeout is specified, the client
+        will unblock returning a nil special value if the specified
+        amount of seconds passed without a push operation against at
+        least one of the specified keys.
+        A timeout of zero means instead to block forever.
+
+        Multiple clients blocking for the same keys
+        Multiple clients can block for the same key. They are put into
+        a queue, so the first to be served will be the one that started
+        to wait earlier, in a first-blpopping first-served fashion.
+
+        Return value
+        BLPOP returns a two-elements array via a multi bulk reply in
+        order to return both the unblocking key and the popped value.
+        When a non-zero timeout is specified, and the BLPOP operation
+        timed out, the return value is a nil multi bulk reply. Most
+        client values will return false or nil accordingly to the
+        programming language used.
+        """
+        cmd = '%s ' % ('BRPOP' if tail else 'BLPOP',)
+        for key in keys:
+            cmd += '%s ' % key
+        cmd += '%s\r\n' % str(timeout)
+        self._write(cmd) 
+        return self.get_response()
+
+    def rpoplpush(self, srckey, dstkey):
+        """
+        @param srckey key of list to pop tail element of
+        @param dstkey key of list to push to
+
+        Atomically return and remove the last (tail) element of the srckey
+        list, and push the element as the first (head) element of the
+        dstkey list. For example if the source list contains the elements
+        "a","b","c" and the destination list contains the elements
+        "foo","bar" after an RPOPLPUSH command the content of the two lists
+        will be "a","b" and "c","foo","bar".
+        If the key does not exist or the list is already empty the special
+        value 'nil' is returned. If the srckey and dstkey are the same the
+        operation is equivalent to removing the last element from the list
+        and pusing it as first element of the list, so it's a "list
+        rotation" command.
+
+        Programming patterns: safe queues
+        Redis lists are often used as queues in order to exchange messages
+        between different programs. A program can add a message performing
+        an LPUSH operation against a Redis list (we call this program a
+        Producer), while another program (that we call Consumer)
+        can process the messages performing an RPOP command in
+        order to start reading the messages from the oldest.
+        Unfortunately if a Consumer crashes just after an RPOP
+        operation the message gets lost. RPOPLPUSH solves this
+        problem since the returned message is added to another
+        "backup" list. The Consumer can later remove the message
+        from the backup list using the LREM command when the
+        message was correctly processed.
+        Another process, called Helper, can monitor the "backup"
+        list to check for timed out entries to repush against the
+        main queue.
+
+        Programming patterns: server-side O(N) list traversal
+        Using RPOPPUSH with the same source and destination key a
+        process can visit all the elements of an N-elements List in
+        O(N) without to transfer the full list from the server to
+        the client in a single LRANGE operation. Note that a
+        process can traverse the list even while other processes
+        are actively RPUSHing against the list, and still no
+        element will be skipped.
+        Return value
+
+        Bulk reply
+        """
+        self._write('%s %s %s\r\n' % ('RPOPLPUSH', srckey, dstkey,))
+        return self.get_response()
+
+    def lset(self, key, index, value):
+        """
+        @param key Redis key
+        @param index index of element
+        @param value new value of element at index
+
+        Set the list element at index (see LINDEX for information about the
+        index argument) with the new value. Out of range indexes will
+        generate an error. Note that setting the first or last elements of
+        the list is O(1).
+        Similarly to other list commands accepting indexes, the index can
+        be negative to access elements starting from the end of the list.
+        So -1 is the last element, -2 is the penultimate, and so forth.
+
+        @note Time complexity: O(N) (with N being the length of the list)
         """
         value = self._encode(value)
         self._write('LSET %s %s %s\r\n%s\r\n' % (
-            name, index, len(value), value
+            key, index, len(value), value
         ))
         return self.get_response()
     
-    def lrem(self, name, value, num=0):
+    def lrem(self, key, value, count=0):
         """
+        @param key Redis key
+        @param value value to match
+        @param count number of occurrences of value
+        Remove the first count occurrences of the value element from the
+        list. If count is zero all the elements are removed. If count is
+        negative elements are removed from tail to head, instead to go from
+        head to tail that is the normal behavior. So for example LREM with
+        count -2 and hello as value to remove against the list
+        (a,b,c,hello,x,hello,hello) will lave the list (a,b,c,hello,x). The
+        number of removed elements is returned as an integer, see below for
+        more information about the returned value. Note that non existing
+        keys are considered like empty lists by LREM, so LREM against non
+        existing keys will always return 0.
+
+        @retval deferred that returns the number of removed elements
+        (int) if the operation succeeded 
+
+        @note Time complexity: O(N) (with N being the length of the list)
         """
         value = self._encode(value)
         self._write('LREM %s %s %s\r\n%s\r\n' % (
-            name, num, len(value), value
+            key, count, len(value), value
         ))
         return self.get_response()
     
     # Commands operating on sets
-    def sadd(self, name, value):
+    def sadd(self, key, value):
         """
         """
         value = self._encode(value)
         self._write('SADD %s %s\r\n%s\r\n' % (
-            name, len(value), value
+            key, len(value), value
         ))
         return self.get_response()
         
-    def srem(self, name, value):
+    def srem(self, key, value):
         """
         """
         value = self._encode(value)
         self._write('SREM %s %s\r\n%s\r\n' % (
-            name, len(value), value
+            key, len(value), value
         ))
         return self.get_response()
 
-    def spop(self, name):
-        self._write('SPOP %s\r\n' % name)
+    def spop(self, key):
+        self._write('SPOP %s\r\n' % key)
         return self.get_response()
 
-    def scard(self, name):
-        self._write('SCARD %s\r\n' % name)
+    def scard(self, key):
+        self._write('SCARD %s\r\n' % key)
         return self.get_response()
     
-    def sismember(self, name, value):
+    def sismember(self, key, value):
         """
         """
         value = self._encode(value)
         self._write('SISMEMBER %s %s\r\n%s\r\n' % (
-            name, len(value), value
+            key, len(value), value
         ))
         return self.get_response()
     
@@ -469,10 +710,10 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         return self.get_response()
 
     @defer.inlineCallbacks
-    def smembers(self, name):
+    def smembers(self, key):
         """
         """
-        self._write('SMEMBERS %s\r\n' % name)
+        self._write('SMEMBERS %s\r\n' % key)
         res = yield self.get_response()
         if type(res) is list:
             res = set(res)
@@ -501,10 +742,10 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write('SELECT %s\r\n' % db)
         return self.get_response()
     
-    def move(self, name, db):
+    def move(self, key, db):
         """
         """
-        self._write('MOVE %s %s\r\n' % (name, db))
+        self._write('MOVE %s %s\r\n' % (key, db))
         return self.get_response()
     
     def flush(self, all_dbs=False):
@@ -544,10 +785,10 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             info[k] = int(v) if v.isdigit() else v
         defer.returnValue(info)
     
-    def sort(self, name, by=None, get=None, start=None, num=None, desc=False, alpha=False):
+    def sort(self, key, by=None, get=None, start=None, num=None, desc=False, alpha=False):
         """
         """
-        stmt = ['SORT', name]
+        stmt = ['SORT', key]
         if by:
             stmt.append("BY %s" % by)
         if start and num:
