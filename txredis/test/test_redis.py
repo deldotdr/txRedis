@@ -2,7 +2,7 @@
 import time
 from decimal import Decimal
 
-from twisted.internet import protocol 
+from twisted.internet import protocol
 from twisted.internet import reactor
 from twisted.internet import defer
 from twisted.trial import unittest
@@ -109,7 +109,7 @@ class General(CommandsTestBase):
         a = yield r.keys('sjdfhskjh*')
         ex = []
         t(a, ex)
- 
+
     @defer.inlineCallbacks
     def test_randomkey(self):
         r = self.redis
@@ -128,7 +128,7 @@ class General(CommandsTestBase):
         t = self.assertEqual
 
         a = yield r.rename('a', 'a')
-        ex = ResponseError('source and destination objects are the same') 
+        ex = ResponseError('source and destination objects are the same')
         t(str(a), str(ex))
         a = yield r.rename('a', 'b')
         ex = 'OK'
@@ -142,7 +142,7 @@ class General(CommandsTestBase):
         a = yield r.rename('b', 'a', preserve=True)
         ex = 0
         t(a, ex)
- 
+
     @defer.inlineCallbacks
     def test_dbsize(self):
         r = self.redis
@@ -235,7 +235,7 @@ class General(CommandsTestBase):
         a = yield r.select(9)
         ex = 'OK'
         t(a, ex)
- 
+
     @defer.inlineCallbacks
     def test_flush(self):
         r = self.redis
@@ -260,7 +260,7 @@ class General(CommandsTestBase):
         ... else:
         ...     assert resp == 'OK'
         """
- 
+
     @defer.inlineCallbacks
     def test_lastsave(self):
         r = self.redis
@@ -273,7 +273,7 @@ class General(CommandsTestBase):
         a = (yield r.lastsave()) >= tme
         ex = True
         t(a, ex)
- 
+
     @defer.inlineCallbacks
     def test_info(self):
         r = self.redis
@@ -286,7 +286,7 @@ class General(CommandsTestBase):
         a = isinstance((yield info.get('connected_clients')), int)
         ex = True
         t(a, ex)
- 
+
 
 class Strings(CommandsTestBase):
     """Test commands that operate on string values.
@@ -316,12 +316,12 @@ class Strings(CommandsTestBase):
     def test_get(self):
         r = self.redis
         t = self.assertEqual
-        
+
         a = yield r.set('a', 'pippo')
         t(a, 'OK')
-        a = yield r.set('b', 15) 
+        a = yield r.set('b', 15)
         t(a, 'OK')
-        a = yield r.set('c', ' \\r\\naaa\\nbbb\\r\\ncccc\\nddd\\r\\n ') 
+        a = yield r.set('c', ' \\r\\naaa\\nbbb\\r\\ncccc\\nddd\\r\\n ')
         t(a, 'OK')
         a = yield r.set('d', '\\r\\n')
         t(a, 'OK')
@@ -443,7 +443,7 @@ class Lists(CommandsTestBase):
         a = yield r.push('a', 'a')
         ex = ResponseError('Operation against a key holding the wrong kind of value')
         t(str(a), str(ex))
- 
+
     @defer.inlineCallbacks
     def test_llen(self):
         r = self.redis
@@ -493,7 +493,7 @@ class Lists(CommandsTestBase):
         a = yield r.lrange('l', -1, -1)
         ex = [u'bbb']
         t(a, ex)
- 
+
     @defer.inlineCallbacks
     def test_ltrim(self):
         r = self.redis
@@ -548,7 +548,7 @@ class Lists(CommandsTestBase):
         a = yield r.lindex('l', -1)
         ex = u'ccc'
         t(a, ex)
- 
+
     @defer.inlineCallbacks
     def test_pop(self):
         r = self.redis
@@ -582,7 +582,7 @@ class Lists(CommandsTestBase):
         ex = u'aaa'
         t(a, ex)
         a = yield r.pop('l')
-        ex = None 
+        ex = None
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -807,7 +807,7 @@ class Sets(CommandsTestBase):
         a = yield r.smembers('s')
         ex = set([u'a', u'b'])
         t(a, ex)
- 
+
     @defer.inlineCallbacks
     def test_sunion(self):
         r = self.redis
@@ -834,7 +834,7 @@ class Sets(CommandsTestBase):
         a = yield r.sunion('s1', 's2', 's3')
         ex = set([u'a', u'c', u'b'])
         t(a, ex)
- 
+
     @defer.inlineCallbacks
     def test_sunionstore(self):
         r = self.redis
@@ -858,7 +858,7 @@ class Sets(CommandsTestBase):
         a = yield r.smembers('s4')
         ex = set([u'a', u'b'])
         t(a, ex)
- 
+
 
     @defer.inlineCallbacks
     def test_sort(self):
@@ -912,7 +912,7 @@ class Sets(CommandsTestBase):
         a = yield r.sort('l', desc=True, by='weight_*', get='missing_*')
         ex = [None, None, None, None]
         t(a, ex)
- 
+
     @defer.inlineCallbacks
     def test_large_values(self):
         import uuid
@@ -929,5 +929,17 @@ class Sets(CommandsTestBase):
             t(value, rval)
 
 
+class Hash(CommandsTestBase):
+    """Test commands that operate on hashes.
+    """
+    @defer.inlineCallbacks
+    def test_hset(self):
+        r = self.redis
+        t = self.assertEqual
 
+        yield r.hdelete('d', 'k')
+        yield r.hset('d', 'k', 'v')
+        a = yield r.hget('d', 'k')
+        ex = 'v'
+        t(a, ex)
 

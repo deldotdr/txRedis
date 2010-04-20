@@ -1,4 +1,4 @@
-""" 
+"""
 @file protocol.py
 
 @author Dorian Raymer
@@ -32,13 +32,13 @@ from txredis.protocol import Redis
 def main():
     clientCreator = protocol.ClientCreator(reactor, Redis)
     redis = yield clientCreator.connectTCP(HOST, PORT)
-    
+
     res = yield redis.ping()
     print res
 
     res = yield redis.set('test', 42)
     print res
-    
+
     test = yield redis.get('test')
     print res
 
@@ -83,7 +83,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self.multi_bulk_length = 0
         self.multi_bulk_reply = []
         self.replyQueue = defer.DeferredQueue()
-        
+
     def lineReceived(self, line):
         """
         Reply types:
@@ -110,7 +110,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
                 self.bulk_length = int(data)
             except ValueError:
                 self.replyReceived(InvalidResponse("Cannot convert data '%s' to integer" % data))
-                return 
+                return
             if self.bulk_length == -1:
                 self.bulkDataReceived(None)
                 return
@@ -129,7 +129,6 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
                 return
             elif self.multi_bulk_length == 0:
                 self.multiBulkDataReceived()
- 
 
     def rawDataReceived(self, data):
         """
@@ -137,7 +136,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @todo buffer raw data in case a bulk piece comes in more than one
         part
         """
-        reply_len = self.bulk_length 
+        reply_len = self.bulk_length
         bulk_data = data[:reply_len]
         rest_data = data[reply_len + 2:]
         self.bulkDataReceived(bulk_data)
@@ -157,7 +156,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         if data == 'none':
             reply = None # should this happen here in the client?
         else:
-            reply = data 
+            reply = data
         self.replyReceived(reply)
 
     def integerReceived(self, data):
@@ -165,7 +164,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         For handling integer replies.
         """
         try:
-            reply = int(data) 
+            reply = int(data)
         except ValueError:
             reply = InvalidResponse("Cannot convert data '%s' to integer" % data)
         self.replyReceived(reply)
@@ -205,7 +204,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self.multi_bulk_reply = []
         self.multi_bulk_length = 0
         self.replyReceived(reply)
-        
+
 
     def replyReceived(self, reply):
         """
@@ -230,22 +229,22 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             except UnicodeEncodeError, e:
                 raise InvalidData("Error encoding unicode value '%s': %s" % (s.encode(self.charset, 'replace'), e))
         return str(s)
-    
+
     def _write(self, s):
         """
         """
         self.transport.write(s)
-            
+
     def ping(self):
         """
         Test command. Expect PONG as a reply.
         """
         self._write('PING\r\n')
         return self.get_response()
-    
-    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # REDIS COMMANDS
-    # 
+    #
 
     # Commands operating on string values
     def set(self, key, value, preserve=False, getset=False):
@@ -262,24 +261,24 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
                 command, key, len(value), value
             ))
         return self.get_response()
-    
+
     def get(self, key):
         """
         """
         self._write('GET %s\r\n' % key)
         return self.get_response()
-    
+
     def getset(self, key, value):
         """
         """
         return self.set(key, value, getset=True)
-        
+
     def mget(self, *args):
         """
         """
         self._write('MGET %s\r\n' % ' '.join(args))
         return self.get_response()
-    
+
     def incr(self, key, amount=1):
         """
         """
@@ -297,7 +296,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         else:
             self._write('DECRBY %s %s\r\n' % (key, amount))
         return self.get_response()
-    
+
     def exists(self, key):
         """
         """
@@ -317,7 +316,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         res = self.get_response()
         # return None if res == 'none' else res
         return res
-    
+
     # Commands operating on the key space
     @defer.inlineCallbacks
     def keys(self, pattern):
@@ -332,14 +331,14 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         else:
             res = []
         defer.returnValue(res)
-    
+
     def randomkey(self):
         """
         """
         #raise NotImplementedError("Implemented but buggy, do not use.")
         self._write('RANDOMKEY\r\n')
         return self.get_response()
-    
+
     def rename(self, src, dst, preserve=False):
         """
         """
@@ -349,26 +348,26 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         else:
             self._write('RENAME %s %s\r\n' % (src, dst))
             return self.get_response() #.strip()
-        
+
     def dbsize(self):
         """
         """
         self._write('DBSIZE\r\n')
         return self.get_response()
-    
+
     def expire(self, key, time):
         """
         """
         self._write('EXPIRE %s %s\r\n' % (key, time))
         return self.get_response()
-    
+
     def ttl(self, key):
         """
         """
         self._write('TTL %s\r\n' % key)
         return self.get_response()
-    
-    # # # # # # # # #   
+
+    # # # # # # # # #
     # List Commands:
     # RPUSH
     # LPUSH
@@ -389,7 +388,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         @param key Redis key
         @param value String element of list
-        
+
         Add the string value to the head (RPUSH) or tail (LPUSH) of the
         list stored at key key. If the key does not exist an empty list is
         created just before the append operation. If the key exists but is
@@ -402,7 +401,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             'LPUSH' if tail else 'RPUSH', key, len(value), value
         ))
         return self.get_response()
-    
+
     def llen(self, key):
         """
         @param key Redis key
@@ -423,7 +422,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @param start first element
         @param end last element
 
-        Return the specified elements of the list stored at the key key. 
+        Return the specified elements of the list stored at the key key.
         Start and end are zero-based indexes. 0 is the first element
         of the list (the list head), 1 the next element and so on.
         For example LRANGE foobar 0 2 will return the first three elements
@@ -440,7 +439,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self._write('LRANGE %s %s %s\r\n' % (key, start, end))
         return self.get_response()
-        
+
     def ltrim(self, key, start, end):
         """
         @param key Redis key
@@ -465,7 +464,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self._write('LTRIM %s %s %s\r\n' % (key, start, end))
         return self.get_response()
-    
+
     def lindex(self, key, index):
         """
         @param key Redis key
@@ -484,7 +483,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self._write('LINDEX %s %s\r\n' % (key, index))
         return self.get_response()
-        
+
     def pop(self, key, tail=False):
         """
         @param key Redis key
@@ -556,7 +555,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         for key in keys:
             cmd += '%s ' % key
         cmd += '%s\r\n' % str(timeout)
-        self._write(cmd) 
+        self._write(cmd)
         return self.get_response()
 
     def rpoplpush(self, srckey, dstkey):
@@ -629,7 +628,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             key, index, len(value), value
         ))
         return self.get_response()
-    
+
     def lrem(self, key, value, count=0):
         """
         @param key Redis key
@@ -647,7 +646,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         existing keys will always return 0.
 
         @retval deferred that returns the number of removed elements
-        (int) if the operation succeeded 
+        (int) if the operation succeeded
 
         @note Time complexity: O(N) (with N being the length of the list)
         """
@@ -656,7 +655,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             key, count, len(value), value
         ))
         return self.get_response()
-    
+
     # Commands operating on sets
     def sadd(self, key, value):
         """
@@ -666,7 +665,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             key, len(value), value
         ))
         return self.get_response()
-        
+
     def srem(self, key, value):
         """
         """
@@ -683,7 +682,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
     def scard(self, key):
         self._write('SCARD %s\r\n' % key)
         return self.get_response()
-    
+
     def sismember(self, key, value):
         """
         """
@@ -692,7 +691,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             key, len(value), value
         ))
         return self.get_response()
-    
+
     @defer.inlineCallbacks
     def sinter(self, *args):
         """
@@ -702,7 +701,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         if type(res) is list:
             res = set(res)
         defer.returnValue(res)
-    
+
     def sinterstore(self, dest, *args):
         """
         """
@@ -741,19 +740,19 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self._write('SELECT %s\r\n' % db)
         return self.get_response()
-    
+
     def move(self, key, db):
         """
         """
         self._write('MOVE %s %s\r\n' % (key, db))
         return self.get_response()
-    
+
     def flush(self, all_dbs=False):
         """
         """
         self._write('%s\r\n' % ('FLUSHALL' if all_dbs else 'FLUSHDB'))
         return self.get_response()
-    
+
     # Persistence control commands
     def save(self, background=False):
         """
@@ -763,13 +762,13 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         else:
             self._write('SAVE\r\n')
         return self.get_response()
-        
+
     def lastsave(self):
         """
         """
         self._write('LASTSAVE\r\n')
         return self.get_response()
-    
+
     @defer.inlineCallbacks
     def info(self):
         """
@@ -784,7 +783,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             k, v = l.split(':')
             info[k] = int(v) if v.isdigit() else v
         defer.returnValue(info)
-    
+
     def sort(self, key, by=None, get=None, start=None, num=None, desc=False, alpha=False):
         """
         """
@@ -808,9 +807,54 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             stmt.append("ALPHA")
         self._write(' '.join(stmt + ["\r\n"]))
         return self.get_response()
-    
+
     def auth(self, passwd):
         self._write('AUTH %s\r\n' % passwd)
         return self.get_response()
-    
-    
+
+    # # # # # # # # #
+    # Hash Commands:
+    # HSET
+    # HGET
+    # HMSET
+    # HINCRBY
+    # HEXISTS
+    # HDEL
+    # HLEN
+    # HKEYS
+    # HVALS
+    # HGETALL
+    def _cmd(self, *args):
+        # multi-bulk commands
+        cmds = []
+        for i in args:
+            v = self._encode(i)
+            cmds.append('$%s\r\n%s\r\n' % (len(v), v))
+        cmd = '*%s\r\n' % len(args) + ''.join(cmds)
+        self._write(cmd)
+
+    def hset(self, key, field, value):
+        self._cmd('HSET', key, field, value)
+        return self.get_response()
+
+    def hget(self, key, field):
+        self._cmd('HGET', key, field)
+        return self.get_response()
+
+    def hincr(self, key, field, amount=1):
+        self._cmd('HINCRBY', key, field, amount)
+        return self.get_response()
+
+    def hexists(self, key, field):
+        self._cmd('HEXISTS', key, field)
+        return self.get_response()
+
+    def hdelete(self, key, field):
+        self._cmd('HDEL', key, field)
+        return self.get_response()
+
+    def hlen(self, key):
+        self._cmd('HLEN', key)
+        return self.get_response()
+
+
