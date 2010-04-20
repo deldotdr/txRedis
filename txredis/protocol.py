@@ -857,4 +857,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._cmd('HLEN', key)
         return self.get_response()
 
+    def hgetall(self, key):
+        self._cmd('HGETALL', key)
+        return self.get_response()
+
 

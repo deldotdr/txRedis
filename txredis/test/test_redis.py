@@ -942,4 +942,8 @@ class Hash(CommandsTestBase):
         a = yield r.hget('d', 'k')
         ex = 'v'
         t(a, ex)
+        yield r.hset('d', 'f', 's')
+        a = yield r.hgetall('d')
+        ex = ['k', 'v', 'f', 's']
+        t(a, ex)
 
