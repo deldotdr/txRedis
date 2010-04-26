@@ -168,7 +168,11 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             reply = int(data) 
         except ValueError:
             reply = InvalidResponse("Cannot convert data '%s' to integer" % data)
-        self.replyReceived(reply)
+        if self.multi_bulk_length > 0:
+            self.handleMultiBulkElement(reply)
+            return
+        else:
+            self.replyReceived(reply)
 
 
     def bulkDataReceived(self, data):
@@ -204,7 +208,10 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         reply = self.multi_bulk_reply
         self.multi_bulk_reply = []
         self.multi_bulk_length = 0
-        self.replyReceived(reply)
+        if reply[0] == u"message":
+            self.messageReceived(reply[1], reply[2])
+        else:
+            self.replyReceived(reply)
         
 
     def replyReceived(self, reply):
@@ -213,6 +220,14 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         function.
         """
         self.replyQueue.put(reply)
+
+
+    def messageReceived(self, channel, message):
+        """
+        Called when this connection is SUBSCRIBEd to a channel that
+        has received a message PUBLISHd on it.
+        """
+        pass
 
 
     def get_response(self):
@@ -813,4 +828,15 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write('AUTH %s\r\n' % passwd)
         return self.get_response()
     
-    
+    def subscribe(self, *channels):
+        self._write("SUBSCRIBE %s\r\n" % ' '.join(channels))
+        return self.get_response()
+
+    def unsubscribe(self, *channels):
+        self._write("UNSUBSCRIBE %s\r\n" % ' '.join(channels))
+        return self.get_response()
+
+    def publish(self, channel, message):
+        self._write('PUBLISH %s %s\r\n%s\r\n' % (channel, len(message), message))
+        return self.get_response()
+
