@@ -855,7 +855,7 @@ class RedisSubscriber(RedisBase):
             channel, numSubscribed = reply[1:]
             self.channelSubscribed(channel, numSubscribed)
         elif reply[0] == u"unsubscribe":
-            channel, message = reply[1:]
+            channel, numSubscribed = reply[1:]
             self.channelUnsubscribed(channel, numSubscribed)
         elif reply[0] == u"psubscribe":
             channelPattern, numSubscribed = reply[1:]
