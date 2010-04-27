@@ -838,6 +838,7 @@ class RedisSubscriber(RedisBase):
 
     def __init__(self, *args, **kwargs):
         RedisBase.__init__(self, *args, **kwargs)
+        self.setTimeout(None)
 
     def handleCompleteMultiBulkData(self, reply):
         """
