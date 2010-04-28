@@ -94,12 +94,9 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
 
         self._disconnected = False
 
-    def _cancelCommands(self, reason):
-        self.replyQueue.failAll(reason)
-
     def connectionLost(self, reason):
         self._disconnected = True
-        self._cancelCommands(reason)
+        self.replyQueue.failAll(reason)
         basic.LineReceiver.connectionLost(self, reason)
         
     def lineReceived(self, line):
@@ -163,7 +160,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
 
     def timeoutConnection(self):
         self._disconnected = True
-        self._cancelCommands(defer.TimeoutError("Connection timeout"))
+        self.replyQueue.failAll(defer.TimeoutError("Connection timeout"))
         basic.LineReceiver.timeoutConnection(self, reason)
 
     def errorReceived(self, data):
