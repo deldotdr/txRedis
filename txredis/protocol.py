@@ -159,9 +159,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self.setLineMode(extra=rest_data)
 
     def timeoutConnection(self):
-        self._disconnected = True
         self.replyQueue.failAll(defer.TimeoutError("Connection timeout"))
-        basic.LineReceiver.timeoutConnection(self, reason)
+        self.transport.loseConnection()
 
     def errorReceived(self, data):
         """
