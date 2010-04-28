@@ -64,6 +64,14 @@ class InvalidResponse(RedisError): pass
 class InvalidData(RedisError): pass
 
 
+class RedisReplyQueue(defer.DeferredQueue):
+
+    def failAll(self, reason):
+        """Trigger errback on all waiting deferreds"""
+        while self.waiting:
+            self.waiting.pop(0).errback(reason)
+
+
 class Redis(basic.LineReceiver, policies.TimeoutMixin):
     """The main Redis client.
     """
@@ -82,7 +90,17 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self.bulk_length = 0
         self.multi_bulk_length = 0
         self.multi_bulk_reply = []
-        self.replyQueue = defer.DeferredQueue()
+        self.replyQueue = RedisReplyQueue()
+
+        self._disconnected = False
+
+    def _cancelCommands(self, reason):
+        self.replyQueue.failAll(reason)
+
+    def connectionLost(self, reason):
+        self._disconnected = True
+        self._cancelCommands(reason)
+        basic.LineReceiver.connectionLost(self, reason)
         
     def lineReceived(self, line):
         """
@@ -142,6 +160,11 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         rest_data = data[reply_len + 2:]
         self.bulkDataReceived(bulk_data)
         self.setLineMode(extra=rest_data)
+
+    def timeoutConnection(self):
+        self._disconnected = True
+        self._cancelCommands(defer.TimeoutError("Connection timeout"))
+        basic.LineReceiver.timeoutConnection(self, reason)
 
     def errorReceived(self, data):
         """
@@ -214,11 +237,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self.replyQueue.put(reply)
 
-
     def get_response(self):
         """
         @retval a deferred which will fire with response from server.
         """
+        if self._disconnected:
+            return defer.fail(RuntimeError("Not connected"))
         return self.replyQueue.get()
 
     def _encode(self, s):
@@ -236,16 +260,16 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self.transport.write(s)
             
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    # REDIS COMMANDS
+    #
+
     def ping(self):
         """
         Test command. Expect PONG as a reply.
         """
         self._write('PING\r\n')
         return self.get_response()
-    
-    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # 
-    # REDIS COMMANDS
-    # 
 
     # Commands operating on string values
     def set(self, key, value, preserve=False, getset=False):
