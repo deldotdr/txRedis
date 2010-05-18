@@ -346,7 +346,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         # return self.get_response().split()
         r = yield self.get_response()
         if r is not None:
-            res = r.split()
+            res = r
             res.sort()# XXX is sort ok?
         else:
             res = []
