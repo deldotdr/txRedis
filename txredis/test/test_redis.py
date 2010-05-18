@@ -482,16 +482,16 @@ class Lists(CommandsTestBase):
         ex = 2
         t(a, ex)
         a = yield r.lrange('l', 0, 0)
-        ex = [u'aaa']
+        ex = [u'bbb']
         t(a, ex)
         a = yield r.lrange('l', 0, 1)
-        ex = [u'aaa', u'bbb']
+        ex = [u'bbb', u'aaa']
         t(a, ex)
         a = yield r.lrange('l', -1, 0)
         ex = []
         t(a, ex)
         a = yield r.lrange('l', -1, -1)
-        ex = [u'bbb']
+        ex = [u'aaa']
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -543,10 +543,10 @@ class Lists(CommandsTestBase):
         ex = 2
         t(a, ex)
         a = yield r.lindex('l', 1)
-        ex = u'ccc'
+        ex = u'aaa'
         t(a, ex)
         a = yield r.lindex('l', -1)
-        ex = u'ccc'
+        ex = u'aaa'
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -563,10 +563,10 @@ class Lists(CommandsTestBase):
         ex = 2
         t(a, ex)
         a = yield r.pop('l')
-        ex = u'aaa'
+        ex = u'bbb'
         t(a, ex)
         a = yield r.pop('l')
-        ex = u'bbb'
+        ex = u'aaa'
         t(a, ex)
         yield r.pop('l')
         a = yield r.push('l', 'aaa')
@@ -576,10 +576,10 @@ class Lists(CommandsTestBase):
         ex = 2
         t(a, ex)
         a = yield r.pop('l', tail=True)
-        ex = u'bbb'
+        ex = u'aaa'
         t(a, ex)
         a = yield r.pop('l')
-        ex = u'aaa'
+        ex = u'bbb'
         t(a, ex)
         a = yield r.pop('l')
         ex = None
@@ -885,7 +885,7 @@ class Sets(CommandsTestBase):
         ex = 1
         t(a, ex)
         for i in range(1, 5):
-            yield r.push('l', 1.0 / i)
+            yield r.push('l', 1.0 / i, tail=True)
         a = yield r.sort('l')
         ex = [Decimal("0.25"), Decimal("0.333333333333"), Decimal("0.5"), Decimal("1.0")]
         t(a, ex)

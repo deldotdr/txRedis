@@ -409,7 +409,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @param key Redis key
         @param value String element of list
 
-        Add the string value to the head (RPUSH) or tail (LPUSH) of the
+        Add the string value to the head (LPUSH) or tail (RPUSH) of the
         list stored at key key. If the key does not exist an empty list is
         created just before the append operation. If the key exists but is
         not a List an error is returned.
@@ -418,7 +418,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         value = self._encode(value)
         self._write('%s %s %s\r\n%s\r\n' % (
-            'LPUSH' if tail else 'RPUSH', key, len(value), value
+            'RPUSH' if tail else 'LPUSH', key, len(value), value
         ))
         return self.get_response()
 
