@@ -85,6 +85,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
     def __init__(self, db=None, charset='utf8', errors='strict'):
         self.charset = charset
         self.errors = errors
+        self.data_buf = ''
         self.db = db
 
         self.bulk_length = 0
@@ -148,12 +149,17 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
     def rawDataReceived(self, data):
         """
         Process and dispatch to bulkDataReceived.
-        @todo buffer raw data in case a bulk piece comes in more than one
-        part
         """
+        # make sure we have the full response
+        self.data_buf = self.data_buf + data
+        if len(self.data_buf) < self.bulk_length:
+            return
+
+        # process full response
         reply_len = self.bulk_length
-        bulk_data = data[:reply_len]
-        rest_data = data[reply_len + 2:]
+        bulk_data = self.data_buf[:reply_len]
+        rest_data = self.data_buf[reply_len + 2:]
+        self.data_buf = ''
         self.bulkDataReceived(bulk_data)
         self.setLineMode(extra=rest_data)
 

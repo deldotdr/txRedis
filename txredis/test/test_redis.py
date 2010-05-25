@@ -5,6 +5,7 @@ from decimal import Decimal
 from twisted.internet import protocol
 from twisted.internet import reactor
 from twisted.internet import defer
+from twisted.test.proto_helpers import StringTransport
 from twisted.trial import unittest
 
 from txredis.protocol import Redis
@@ -1000,3 +1001,19 @@ class BlockingListOperartions(CommandsTestBase):
         r2.transport.loseConnection()
 
 
+class Protocol(unittest.TestCase):
+
+    def setUp(self):
+        self.proto = Redis()
+        self.transport = StringTransport()
+        self.transport.proto = self.proto
+        self.proto.makeConnection(self.transport)
+
+    def test_raw_chunked(self):
+        d = self.proto.lrange("foo", 0, 1)
+        d.addCallback(self.assertEquals, ['bar', 'lolwut'])
+        self.assertEquals(self.transport.value(), "LRANGE foo 0 1\r\n")
+        self.proto.dataReceived("*2\r\n$3\r\nbar")
+        self.proto.dataReceived("$6\r\nlol") # split here
+        self.proto.dataReceived("wut\r\n")
+        return d
