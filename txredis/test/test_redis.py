@@ -14,6 +14,7 @@ from txredis.protocol import ResponseError
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
 
+
 class CommandsTestBase(unittest.TestCase):
 
     @defer.inlineCallbacks
@@ -24,9 +25,35 @@ class CommandsTestBase(unittest.TestCase):
     def tearDown(self):
         self.redis.transport.loseConnection()
 
+
 class General(CommandsTestBase):
     """Test commands that operate on any type of redis value.
     """
+
+    @defer.inlineCallbacks
+    def test_concurrent(self):
+        """Test ability to handle many large responses at the same time"""
+        num_lists = 100
+        items_per_list = 50
+
+        # 1. Generate and fill lists
+        lists = []
+        for l in range(0, num_lists):
+            key = 'list-%d' % l
+            yield self.redis.delete(key)
+            for i in range(0, items_per_list):
+                yield self.redis.push(key, 'item-%d' % i)
+            lists.append(key)
+
+        # 2. Make requests to get all lists
+        ds = []
+        for key in lists:
+            d = self.redis.lrange(key, 0, items_per_list)
+            ds.append(d)
+
+        # 3. Wait on all responses and make sure we got them all
+        r = yield defer.DeferredList(ds)
+        self.assertEquals(len(r), num_lists)
 
     @defer.inlineCallbacks
     def test_ping(self):
@@ -350,7 +377,6 @@ class Strings(CommandsTestBase):
         ex = None
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_getset(self):
         r = self.redis
@@ -382,7 +408,8 @@ class Strings(CommandsTestBase):
         ex = 'OK'
         t(a, ex)
         a = yield r.mget('a', 'b', 'c', 'd')
-        ex = [u'pippo', 15, u'\\r\\naaa\\nbbb\\r\\ncccc\\nddd\\r\\n', u'\\r\\n']
+        ex = [u'pippo', 15,
+              u'\\r\\naaa\\nbbb\\r\\ncccc\\nddd\\r\\n', u'\\r\\n']
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -403,12 +430,10 @@ class Strings(CommandsTestBase):
         ex = 4
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_decr(self):
         r = self.redis
         t = self.assertEqual
-
 
         a = yield r.get('a')
         if a:
@@ -442,7 +467,8 @@ class Lists(CommandsTestBase):
         ex = 'OK'
         t(a, ex)
         a = yield r.push('a', 'a')
-        ex = ResponseError('Operation against a key holding the wrong kind of value')
+        ex = ResponseError('Operation against a key holding the wrong kind '+
+                           'of value')
         t(str(a), str(ex))
 
     @defer.inlineCallbacks
@@ -645,6 +671,7 @@ class Lists(CommandsTestBase):
         ex = 0
         t(a, ex)
 
+
 class Sets(CommandsTestBase):
     """Test commands that operate on sets.
     """
@@ -711,7 +738,6 @@ class Sets(CommandsTestBase):
         ex = 1
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_sismember(self):
         r = self.redis
@@ -752,7 +778,8 @@ class Sets(CommandsTestBase):
         ex = ResponseError("wrong number of arguments for 'sinter' command")
         t(str(a), str(ex))
         a = yield r.sinter('l')
-        ex = ResponseError('Operation against a key holding the wrong kind of value')
+        ex = ResponseError('Operation against a key holding the wrong kind '+
+                           'of value')
         t(str(a), str(ex))
         a = yield r.sinter('s1', 's2', 's3')
         ex = set([])
@@ -803,7 +830,8 @@ class Sets(CommandsTestBase):
         ex = 1
         t(a, ex)
         a = yield r.smembers('l')
-        ex = ResponseError('Operation against a key holding the wrong kind of value')
+        ex = ResponseError('Operation against a key holding the wrong kind '+
+                           'of value')
         t(str(a), str(ex))
         a = yield r.smembers('s')
         ex = set([u'a', u'b'])
@@ -860,7 +888,6 @@ class Sets(CommandsTestBase):
         ex = set([u'a', u'b'])
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_sort(self):
         r = self.redis
@@ -888,10 +915,12 @@ class Sets(CommandsTestBase):
         for i in range(1, 5):
             yield r.push('l', 1.0 / i, tail=True)
         a = yield r.sort('l')
-        ex = [Decimal("0.25"), Decimal("0.333333333333"), Decimal("0.5"), Decimal("1.0")]
+        ex = [Decimal("0.25"), Decimal("0.333333333333"), Decimal("0.5"),
+              Decimal("1.0")]
         t(a, ex)
         a = yield r.sort('l', desc=True)
-        ex = [Decimal("1.0"), Decimal("0.5"), Decimal("0.333333333333"), Decimal("0.25")]
+        ex = [Decimal("1.0"), Decimal("0.5"), Decimal("0.333333333333"),
+              Decimal("0.25")]
         t(a, ex)
         a = yield r.sort('l', desc=True, start=2, num=1)
         ex = [Decimal("0.333333333333")]
@@ -900,15 +929,18 @@ class Sets(CommandsTestBase):
         ex = 'OK'
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*')
-        ex = [Decimal("0.5"), Decimal("1.0"), Decimal("0.333333333333"), Decimal("0.25")]
+        ex = [Decimal("0.5"), Decimal("1.0"), Decimal("0.333333333333"),
+              Decimal("0.25")]
         t(a, ex)
         for i in (yield r.sort('l', desc=True)):
             yield r.set('test_%s' % i, 100 - float(i))
         a = yield r.sort('l', desc=True, get='test_*')
-        ex = [Decimal("99.0"), Decimal("99.5"), Decimal("99.6666666667"), Decimal("99.75")]
+        ex = [Decimal("99.0"), Decimal("99.5"), Decimal("99.6666666667"),
+              Decimal("99.75")]
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*', get='test_*')
-        ex = [Decimal("99.5"), Decimal("99.0"), Decimal("99.6666666667"), Decimal("99.75")]
+        ex = [Decimal("99.5"), Decimal("99.0"), Decimal("99.6666666667"),
+              Decimal("99.75")]
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*', get='missing_*')
         ex = [None, None, None, None]
@@ -933,6 +965,7 @@ class Sets(CommandsTestBase):
 class Hash(CommandsTestBase):
     """Test commands that operate on hashes.
     """
+
     @defer.inlineCallbacks
     def test_hset(self):
         r = self.redis
@@ -947,6 +980,7 @@ class Hash(CommandsTestBase):
         a = yield r.hgetall('d')
         ex = ['k', 'v', 'f', 's']
         t(a, ex)
+
 
 class BlockingListOperartions(CommandsTestBase):
     """@todo test timeout
@@ -963,16 +997,23 @@ class BlockingListOperartions(CommandsTestBase):
         yield r.push('test.list.a', 'stuff')
         yield r.push('test.list.a', 'things')
         yield r.push('test.list.b', 'spam')
-
         yield r.push('test.list.b', 'bee')
         yield r.push('test.list.b', 'honey')
 
         a = yield r.bpop(['test.list.a', 'test.list.b'])
-        ex = ['test.list.a', 'stuff'] 
+        ex = ['test.list.a', 'things']
         t(a, ex)
-
-        a = yield r.bpop(['test.list.a', 'test.list.b'], tail=True)
-        ex = ['test.list.a', 'things'] 
+        a = yield r.bpop(['test.list.b', 'test.list.a'])
+        ex = ['test.list.b', 'honey']
+        t(a, ex)
+        a = yield r.bpop(['test.list.a', 'test.list.b'])
+        ex = ['test.list.a', 'stuff']
+        t(a, ex)
+        a = yield r.bpop(['test.list.b', 'test.list.a'])
+        ex = ['test.list.b', 'bee']
+        t(a, ex)
+        a = yield r.bpop(['test.list.a', 'test.list.b'])
+        ex = ['test.list.b', 'spam']
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -992,7 +1033,6 @@ class BlockingListOperartions(CommandsTestBase):
         d = r.bpop(['test.list.a', 'test.list.b'])
         ex = ['test.list.a', 'stuff']
         d.addCallback(_cb, ex)
-        # d.addErrback(_eb)
 
         info = yield r2.info()
 
@@ -1009,11 +1049,55 @@ class Protocol(unittest.TestCase):
         self.transport.proto = self.proto
         self.proto.makeConnection(self.transport)
 
-    def test_raw_chunked(self):
+    def sendResponse(self, data):
+        self.proto.dataReceived(data)
+
+    @defer.inlineCallbacks
+    def test_error_response(self):
+        # pretending 'foo' is a set, so get is incorrect
+        d = self.proto.get("foo")
+        self.assertEquals(self.transport.value(), "GET foo\r\n")
+        msg = "Operation against a key holding the wrong kind of value"
+        self.sendResponse("-%s\r\n" % msg)
+        r = yield d
+        self.assertEquals(str(r), msg)
+
+    @defer.inlineCallbacks
+    def test_singleline_response(self):
+        d = self.proto.ping()
+        self.assertEquals(self.transport.value(), "PING\r\n")
+        self.sendResponse("+PONG\r\n")
+        r = yield d
+        self.assertEquals(r, 'PONG')
+
+    @defer.inlineCallbacks
+    def test_bulk_response(self):
+        d = self.proto.get("foo")
+        self.assertEquals(self.transport.value(), "GET foo\r\n")
+        self.sendResponse("$3\r\nbar\r\n")
+        r = yield d
+        self.assertEquals(r, 'bar')
+
+    @defer.inlineCallbacks
+    def test_multibulk_response(self):
         d = self.proto.lrange("foo", 0, 1)
-        d.addCallback(self.assertEquals, ['bar', 'lolwut'])
         self.assertEquals(self.transport.value(), "LRANGE foo 0 1\r\n")
-        self.proto.dataReceived("*2\r\n$3\r\nbar")
-        self.proto.dataReceived("$6\r\nlol") # split here
-        self.proto.dataReceived("wut\r\n")
-        return d
+        self.sendResponse("*2\r\n$3\r\nbar\r\n$6\r\nlolwut\r\n")
+        r = yield d
+        self.assertEquals(r, ['bar', 'lolwut'])
+
+    @defer.inlineCallbacks
+    def test_integer_response(self):
+        d = self.proto.dbsize()
+        self.assertEquals(self.transport.value(), "DBSIZE\r\n")
+        self.sendResponse(":1234\r\n")
+        r = yield d
+        self.assertEquals(r, 1234)
+
+
+class ProtocolBuffering(Protocol):
+
+    def sendResponse(self, data):
+        """Send a response one character at a time to test buffering"""
+        for char in data:
+            self.proto.dataReceived(char)

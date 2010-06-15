@@ -52,19 +52,32 @@ Command doc strings taken from the CommandReference wiki page.
 
 import decimal
 
-from twisted.internet import defer
+from twisted.internet import defer, protocol
 from twisted.protocols import basic
 from twisted.protocols import policies
 
 
-class RedisError(Exception): pass
-class ConnectionError(RedisError): pass
-class ResponseError(RedisError): pass
-class InvalidResponse(RedisError): pass
-class InvalidData(RedisError): pass
+class RedisError(Exception):
+    pass
 
 
-class RedisReplyQueue(defer.DeferredQueue):
+class ConnectionError(RedisError):
+    pass
+
+
+class ResponseError(RedisError):
+    pass
+
+
+class InvalidResponse(RedisError):
+    pass
+
+
+class InvalidData(RedisError):
+    pass
+
+
+class RedisRequestQueue(defer.DeferredQueue):
 
     def failAll(self, reason):
         """Trigger errback on all waiting deferreds"""
@@ -72,227 +85,236 @@ class RedisReplyQueue(defer.DeferredQueue):
             self.waiting.pop(0).errback(reason)
 
 
-class Redis(basic.LineReceiver, policies.TimeoutMixin):
-    """The main Redis client.
-    """
+class Redis(protocol.Protocol, policies.TimeoutMixin):
+    """The main Redis client."""
 
     ERROR = "-"
-    STATUS = "+"
+    SINGLE_LINE = "+"
     INTEGER = ":"
     BULK = "$"
     MULTI_BULK = "*"
 
     def __init__(self, db=None, charset='utf8', errors='strict'):
         self.charset = charset
-        self.errors = errors
-        self.data_buf = ''
         self.db = db
-
-        self.bulk_length = 0
-        self.multi_bulk_length = 0
-        self.multi_bulk_reply = []
-        self.replyQueue = RedisReplyQueue()
-
+        self.errors = errors
+        self._buffer = ''
+        self._bulk_length = 0
         self._disconnected = False
+        self._multi_bulk_length = 0
+        self._multi_bulk_reply = []
+        self._request_queue = RedisRequestQueue()
+
+    def dataReceived(self, data):
+        """Receive data.
+
+        Spec: http://code.google.com/p/redis/wiki/ProtocolSpecification
+
+        """
+        self._buffer = self._buffer + data
+
+        while self._buffer:
+            self.resetTimeout()
+
+            # if we're expecting bulk data, read that many bytes
+            if self._bulk_length:
+                # wait until there's enough data in the buffer
+                if len(self._buffer) < self._bulk_length:
+                    return
+                data = self._buffer[:self._bulk_length]
+                self._buffer = self._buffer[self._bulk_length+2:] # 2 for /r/n
+                self.bulkDataReceived(data)
+                continue
+
+            # wait until we have a line
+            if '\r\n' not in self._buffer:
+                return
+
+            # grab a line
+            line, self._buffer = self._buffer.split('\r\n', 1)
+            if len(line) == 0:
+                continue
+
+            # first byte indicates reply type
+            reply_type = line[0]
+            reply_data = line[1:]
+
+            # Error message (-)
+            if reply_type == self.ERROR:
+                self.errorReceived(reply_data)
+            # Integer number (:)
+            elif reply_type == self.INTEGER:
+                self.integerReceived(reply_data)
+            # Single line (+)
+            elif reply_type == self.SINGLE_LINE:
+                self.singleLineReceived(reply_data)
+            # Bulk data (*)
+            elif reply_type == self.BULK:
+                try:
+                    self._bulk_length = int(reply_data)
+                except ValueError:
+                    r = InvalidResponse("Cannot convert data '%s' to integer"
+                                        % reply_data)
+                    self.responseReceived(r)
+                    return
+                # requested value may not exist
+                if self._bulk_length == -1:
+                    self.bulkDataReceived(None)
+            # Multi-bulk data ($)
+            elif reply_type == self.MULTI_BULK:
+                # reply_data will contain the # of bulks we're about to get
+                try:
+                    self._multi_bulk_length = int(reply_data)
+                except ValueError:
+                    r = InvalidResponse("Cannot convert data '%s' to integer"
+                                        % reply_data)
+                    self.responseReceived(r)
+                    return
+                if self._multi_bulk_length == -1:
+                    self._multi_bulk_reply = None
+                    self.multiBulkDataReceived()
+                    return
+                elif self._multi_bulk_length == 0:
+                    self.multiBulkDataReceived()
 
     def connectionLost(self, reason):
+        """Called when the connection is lost.
+
+        Will fail all pending requests.
+
+        """
         self._disconnected = True
-        self.replyQueue.failAll(reason)
-        basic.LineReceiver.connectionLost(self, reason)
-        
-    def lineReceived(self, line):
-        """
-        Reply types:
-          "-" error message
-          "+" single line status reply
-          ":" integer number (protocol level only?)
-
-          "$" bulk data
-          "*" multi-bulk data
-        """
-        self.resetTimeout()
-        if len(line) == 0:
-            return
-        token = line[0] # first byte indicates reply type
-        data = line[1:]
-        if token == self.ERROR:
-            self.errorReceived(data)
-        elif token == self.STATUS:
-            self.statusReceived(data)
-        elif token == self.INTEGER:
-            self.integerReceived(data)
-        elif token == self.BULK:
-            try:
-                self.bulk_length = int(data)
-            except ValueError:
-                self.replyReceived(InvalidResponse("Cannot convert data '%s' to integer" % data))
-                return
-            if self.bulk_length == -1:
-                self.bulkDataReceived(None)
-                return
-            else:
-                self.setRawMode()
-        elif token == self.MULTI_BULK:
-            try:
-                self.multi_bulk_length = int(data)
-            except (TypeError, ValueError):
-                self.replyReceived(InvalidResponse("Cannot convert multi-response header '%s' to integer" % data))
-                self.multi_bulk_length = 0
-                return
-            if self.multi_bulk_length == -1:
-                self.multi_bulk_reply = None
-                self.multiBulkDataReceived()
-                return
-            elif self.multi_bulk_length == 0:
-                self.multiBulkDataReceived()
-
-    def rawDataReceived(self, data):
-        """
-        Process and dispatch to bulkDataReceived.
-        """
-        # make sure we have the full response
-        self.data_buf = self.data_buf + data
-        if len(self.data_buf) < self.bulk_length:
-            return
-
-        # process full response
-        reply_len = self.bulk_length
-        bulk_data = self.data_buf[:reply_len]
-        rest_data = self.data_buf[reply_len + 2:]
-        self.data_buf = ''
-        self.bulkDataReceived(bulk_data)
-        self.setLineMode(extra=rest_data)
+        self._request_queue.failAll(reason)
 
     def timeoutConnection(self):
-        self.replyQueue.failAll(defer.TimeoutError("Connection timeout"))
+        """Called when the connection times out.
+
+        Will fail all pending requests with a TimeoutError.
+
+        """
+        self._request_queue.failAll(defer.TimeoutError("Connection timeout"))
         self.transport.loseConnection()
 
     def errorReceived(self, data):
-        """
-        Error from server.
-        """
+        """Error response received."""
         reply = ResponseError(data[4:] if data[:4] == 'ERR ' else data)
-        self.replyReceived(reply)
+        self.responseReceived(reply)
 
-    def statusReceived(self, data):
-        """
-        Single line status should always be a string.
-        """
+    def singleLineReceived(self, data):
+        """Single line response received."""
         if data == 'none':
             reply = None # should this happen here in the client?
         else:
             reply = data
-        self.replyReceived(reply)
+        self.responseReceived(reply)
 
     def integerReceived(self, data):
-        """
-        For handling integer replies.
-        """
+        """Integer response received."""
         try:
             reply = int(data)
         except ValueError:
-            reply = InvalidResponse("Cannot convert data '%s' to integer" % data)
-        self.replyReceived(reply)
-
+            reply = InvalidResponse("Cannot convert data '%s' to integer"
+                                    % data)
+        self.responseReceived(reply)
 
     def bulkDataReceived(self, data):
-        """
-        Receipt of a bulk data element.
-        """
-        self.bulk_length = 0
-        if data is None:
-            element = data
-        else:
-            try:
-                element = int(data) if data.find('.') == -1 else decimal.Decimal(data)
-            except (ValueError, decimal.InvalidOperation):
-                element = data.decode(self.charset)
+        """Bulk data response received."""
+        self._bulk_length = 0
 
-        if self.multi_bulk_length > 0:
-            self.handleMultiBulkElement(element)
+        # try to convert to int/decimal, otherwise treat as string
+        try:
+            if data is None:
+                element = None
+            elif '.' in data:
+                element = decimal.Decimal(data)
+            else:
+                element = int(data)
+        except (ValueError, decimal.InvalidOperation):
+            element = data.decode(self.charset)
+
+        # store bulks we're receiving as part of a multi-bulk response
+        if self._multi_bulk_length > 0:
+            self._multi_bulk_reply.append(element)
+            self._multi_bulk_length = self._multi_bulk_length - 1
+            if self._multi_bulk_length == 0:
+                self.multiBulkDataReceived()
             return
-        else:
-            self.replyReceived(element)
 
-    def handleMultiBulkElement(self, element):
-        self.multi_bulk_reply.append(element)
-        self.multi_bulk_length = self.multi_bulk_length - 1
-        if self.multi_bulk_length == 0:
-            self.multiBulkDataReceived()
-
+        self.responseReceived(element)
 
     def multiBulkDataReceived(self):
-        """
-        Receipt of list or set of bulk data elements.
-        """
-        reply = self.multi_bulk_reply
-        self.multi_bulk_reply = []
-        self.multi_bulk_length = 0
-        self.replyReceived(reply)
+        """Multi bulk response received.
 
+        The bulks making up this response have been collected in
+        self._multi_bulk_reply.
 
-    def replyReceived(self, reply):
         """
-        Complete reply received and ready to be pushed to the requesting
-        function.
-        """
-        self.replyQueue.put(reply)
+        reply = self._multi_bulk_reply
+        self._multi_bulk_reply = []
+        self._multi_bulk_length = 0
+        self.responseReceived(reply)
 
-    def get_response(self):
+    def responseReceived(self, reply):
+        """Push a reply to the waiting request."""
+        self._request_queue.put(reply)
+
+    def getResponse(self):
         """
         @retval a deferred which will fire with response from server.
         """
         if self._disconnected:
             return defer.fail(RuntimeError("Not connected"))
-        return self.replyQueue.get()
+        return self._request_queue.get()
 
     def _encode(self, s):
+        """Encode a value for sending to the server."""
         if isinstance(s, str):
             return s
         if isinstance(s, unicode):
             try:
                 return s.encode(self.charset, self.errors)
             except UnicodeEncodeError, e:
-                raise InvalidData("Error encoding unicode value '%s': %s" % (s.encode(self.charset, 'replace'), e))
+                raise InvalidData("Error encoding unicode value '%s': %s"
+                                  % (s.encode(self.charset, 'replace'), e))
         return str(s)
 
     def _write(self, s):
-        """
-        """
+        """Send data."""
         self.transport.write(s)
-            
+
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # REDIS COMMANDS
     #
-
     def ping(self):
         """
         Test command. Expect PONG as a reply.
         """
         self._write('PING\r\n')
-        return self.get_response()
+        return self.getResponse()
 
     # Commands operating on string values
     def set(self, key, value, preserve=False, getset=False):
         """
         """
-        # the following will raise an error for unicode values that can't be encoded to ascii
-        # we could probably add an 'encoding' arg to init, but then what do we do with get()?
-        # convert back to unicode? and what about ints, or pickled values?
-        if getset: command = 'GETSET'
-        elif preserve: command = 'SETNX'
-        else: command = 'SET'
+        # The following will raise an error for unicode values that can't be
+        # encoded to ascii. We could probably add an 'encoding' arg to init,
+        # but then what do we do with get()? Convert back to unicode? And what
+        # about ints, or pickled values?
+        if getset:
+            command = 'GETSET'
+        elif preserve:
+            command = 'SETNX'
+        else:
+            command = 'SET'
         value = self._encode(value)
-        self._write('%s %s %s\r\n%s\r\n' % (
-                command, key, len(value), value
-            ))
-        return self.get_response()
+        self._write('%s %s %s\r\n%s\r\n' % (command, key, len(value), value))
+        return self.getResponse()
 
     def get(self, key):
         """
         """
         self._write('GET %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def getset(self, key, value):
         """
@@ -303,7 +325,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         """
         self._write('MGET %s\r\n' % ' '.join(args))
-        return self.get_response()
+        return self.getResponse()
 
     def incr(self, key, amount=1):
         """
@@ -312,7 +334,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             self._write('INCR %s\r\n' % key)
         else:
             self._write('INCRBY %s %s\r\n' % (key, amount))
-        return self.get_response()
+        return self.getResponse()
 
     def decr(self, key, amount=1):
         """
@@ -321,25 +343,25 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             self._write('DECR %s\r\n' % key)
         else:
             self._write('DECRBY %s %s\r\n' % (key, amount))
-        return self.get_response()
+        return self.getResponse()
 
     def exists(self, key):
         """
         """
         self._write('EXISTS %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def delete(self, key):
         """
         """
         self._write('DEL %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def get_type(self, key):
         """
         """
         self._write('TYPE %s\r\n' % key)
-        res = self.get_response()
+        res = self.getResponse()
         # return None if res == 'none' else res
         return res
 
@@ -349,8 +371,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         """
         self._write('KEYS %s\r\n' % pattern)
-        # return self.get_response().split()
-        r = yield self.get_response()
+        # return self.getResponse().split()
+        r = yield self.getResponse()
         if r is not None:
             res = r
             res.sort()# XXX is sort ok?
@@ -363,35 +385,35 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         #raise NotImplementedError("Implemented but buggy, do not use.")
         self._write('RANDOMKEY\r\n')
-        return self.get_response()
+        return self.getResponse()
 
     def rename(self, src, dst, preserve=False):
         """
         """
         if preserve:
             self._write('RENAMENX %s %s\r\n' % (src, dst))
-            return self.get_response()
+            return self.getResponse()
         else:
             self._write('RENAME %s %s\r\n' % (src, dst))
-            return self.get_response() #.strip()
+            return self.getResponse() #.strip()
 
     def dbsize(self):
         """
         """
         self._write('DBSIZE\r\n')
-        return self.get_response()
+        return self.getResponse()
 
     def expire(self, key, time):
         """
         """
         self._write('EXPIRE %s %s\r\n' % (key, time))
-        return self.get_response()
+        return self.getResponse()
 
     def ttl(self, key):
         """
         """
         self._write('TTL %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     # # # # # # # # #
     # List Commands:
@@ -409,7 +431,6 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
     # BRPOP
     # RPOPLPUSH
     # SORT
-
     def push(self, key, value, tail=False):
         """
         @param key Redis key
@@ -423,10 +444,9 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(1)
         """
         value = self._encode(value)
-        self._write('%s %s %s\r\n%s\r\n' % (
-            'RPUSH' if tail else 'LPUSH', key, len(value), value
-        ))
-        return self.get_response()
+        self._write('%s %s %s\r\n%s\r\n'
+                    % ('RPUSH' if tail else 'LPUSH', key, len(value), value))
+        return self.getResponse()
 
     def llen(self, key):
         """
@@ -440,7 +460,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(1)
         """
         self._write('LLEN %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def lrange(self, key, start, end):
         """
@@ -464,7 +484,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(n) (with n being the length of the range)
         """
         self._write('LRANGE %s %s %s\r\n' % (key, start, end))
-        return self.get_response()
+        return self.getResponse()
 
     def ltrim(self, key, start, end):
         """
@@ -489,7 +509,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(n) (with n being len of list - len of range)
         """
         self._write('LTRIM %s %s %s\r\n' % (key, start, end))
-        return self.get_response()
+        return self.getResponse()
 
     def lindex(self, key, index):
         """
@@ -508,7 +528,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         the first or the last element of the list is O(1).
         """
         self._write('LINDEX %s %s\r\n' % (key, index))
-        return self.get_response()
+        return self.getResponse()
 
     def pop(self, key, tail=False):
         """
@@ -522,7 +542,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         value 'nil' is returned.
         """
         self._write('%s %s\r\n' % ('RPOP' if tail else 'LPOP', key))
-        return self.get_response()
+        return self.getResponse()
 
     def bpop(self, keys, tail=False, timeout=30):
         """
@@ -577,12 +597,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         client values will return false or nil accordingly to the
         programming language used.
         """
-        cmd = '%s ' % ('BRPOP' if tail else 'BLPOP',)
+        cmd = '%s ' % ('BRPOP' if tail else 'BLPOP')
         for key in keys:
             cmd += '%s ' % key
         cmd += '%s\r\n' % str(timeout)
         self._write(cmd)
-        return self.get_response()
+        return self.getResponse()
 
     def rpoplpush(self, srckey, dstkey):
         """
@@ -630,8 +650,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
 
         Bulk reply
         """
-        self._write('%s %s %s\r\n' % ('RPOPLPUSH', srckey, dstkey,))
-        return self.get_response()
+        self._write('%s %s %s\r\n' % ('RPOPLPUSH', srckey, dstkey))
+        return self.getResponse()
 
     def lset(self, key, index, value):
         """
@@ -650,10 +670,9 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(N) (with N being the length of the list)
         """
         value = self._encode(value)
-        self._write('LSET %s %s %s\r\n%s\r\n' % (
-            key, index, len(value), value
-        ))
-        return self.get_response()
+        self._write('LSET %s %s %s\r\n%s\r\n'
+                    % (key, index, len(value), value))
+        return self.getResponse()
 
     def lrem(self, key, value, count=0):
         """
@@ -677,53 +696,46 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(N) (with N being the length of the list)
         """
         value = self._encode(value)
-        self._write('LREM %s %s %s\r\n%s\r\n' % (
-            key, count, len(value), value
-        ))
-        return self.get_response()
+        self._write('LREM %s %s %s\r\n%s\r\n'
+                    % (key, count, len(value), value))
+        return self.getResponse()
 
     # Commands operating on sets
     def sadd(self, key, value):
         """
         """
         value = self._encode(value)
-        self._write('SADD %s %s\r\n%s\r\n' % (
-            key, len(value), value
-        ))
-        return self.get_response()
+        self._write('SADD %s %s\r\n%s\r\n' % (key, len(value), value))
+        return self.getResponse()
 
     def srem(self, key, value):
         """
         """
         value = self._encode(value)
-        self._write('SREM %s %s\r\n%s\r\n' % (
-            key, len(value), value
-        ))
-        return self.get_response()
+        self._write('SREM %s %s\r\n%s\r\n' % (key, len(value), value))
+        return self.getResponse()
 
     def spop(self, key):
         self._write('SPOP %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def scard(self, key):
         self._write('SCARD %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def sismember(self, key, value):
         """
         """
         value = self._encode(value)
-        self._write('SISMEMBER %s %s\r\n%s\r\n' % (
-            key, len(value), value
-        ))
-        return self.get_response()
+        self._write('SISMEMBER %s %s\r\n%s\r\n' % (key, len(value), value))
+        return self.getResponse()
 
     @defer.inlineCallbacks
     def sinter(self, *args):
         """
         """
         self._write('SINTER %s\r\n' % ' '.join(args))
-        res = yield self.get_response()
+        res = yield self.getResponse()
         if type(res) is list:
             res = set(res)
         defer.returnValue(res)
@@ -732,14 +744,14 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         """
         self._write('SINTERSTORE %s %s\r\n' % (dest, ' '.join(args)))
-        return self.get_response()
+        return self.getResponse()
 
     @defer.inlineCallbacks
     def smembers(self, key):
         """
         """
         self._write('SMEMBERS %s\r\n' % key)
-        res = yield self.get_response()
+        res = yield self.getResponse()
         if type(res) is list:
             res = set(res)
         defer.returnValue(res)
@@ -749,7 +761,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         """
         self._write('SUNION %s\r\n' % ' '.join(args))
-        res = yield self.get_response()
+        res = yield self.getResponse()
         if type(res) is list:
             res = set(res)
         defer.returnValue(res)
@@ -758,26 +770,26 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         """
         self._write('SUNIONSTORE %s %s\r\n' % (dest, ' '.join(args)))
-        return self.get_response()
+        return self.getResponse()
 
     # Multiple databases handling commands
     def select(self, db):
         """
         """
         self._write('SELECT %s\r\n' % db)
-        return self.get_response()
+        return self.getResponse()
 
     def move(self, key, db):
         """
         """
         self._write('MOVE %s %s\r\n' % (key, db))
-        return self.get_response()
+        return self.getResponse()
 
     def flush(self, all_dbs=False):
         """
         """
         self._write('%s\r\n' % ('FLUSHALL' if all_dbs else 'FLUSHDB'))
-        return self.get_response()
+        return self.getResponse()
 
     # Persistence control commands
     def save(self, background=False):
@@ -787,13 +799,13 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             self._write('BGSAVE\r\n')
         else:
             self._write('SAVE\r\n')
-        return self.get_response()
+        return self.getResponse()
 
     def lastsave(self):
         """
         """
         self._write('LASTSAVE\r\n')
-        return self.get_response()
+        return self.getResponse()
 
     @defer.inlineCallbacks
     def info(self):
@@ -801,7 +813,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         self._write('INFO\r\n')
         info = dict()
-        res = yield self.get_response()
+        res = yield self.getResponse()
         res = res.split('\r\n')
         for l in res:
             if not l:
@@ -810,7 +822,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             info[k] = int(v) if v.isdigit() else v
         defer.returnValue(info)
 
-    def sort(self, key, by=None, get=None, start=None, num=None, desc=False, alpha=False):
+    def sort(self, key, by=None, get=None, start=None, num=None, desc=False,
+             alpha=False):
         """
         """
         stmt = ['SORT', key]
@@ -832,11 +845,11 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         if alpha:
             stmt.append("ALPHA")
         self._write(' '.join(stmt + ["\r\n"]))
-        return self.get_response()
+        return self.getResponse()
 
     def auth(self, passwd):
         self._write('AUTH %s\r\n' % passwd)
-        return self.get_response()
+        return self.getResponse()
 
     # # # # # # # # #
     # Hash Commands:
@@ -861,30 +874,28 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
 
     def hset(self, key, field, value):
         self._cmd('HSET', key, field, value)
-        return self.get_response()
+        return self.getResponse()
 
     def hget(self, key, field):
         self._cmd('HGET', key, field)
-        return self.get_response()
+        return self.getResponse()
 
     def hincr(self, key, field, amount=1):
         self._cmd('HINCRBY', key, field, amount)
-        return self.get_response()
+        return self.getResponse()
 
     def hexists(self, key, field):
         self._cmd('HEXISTS', key, field)
-        return self.get_response()
+        return self.getResponse()
 
     def hdelete(self, key, field):
         self._cmd('HDEL', key, field)
-        return self.get_response()
+        return self.getResponse()
 
     def hlen(self, key):
         self._cmd('HLEN', key)
-        return self.get_response()
+        return self.getResponse()
 
     def hgetall(self, key):
         self._cmd('HGETALL', key)
-        return self.get_response()
-
-
+        return self.getResponse()
