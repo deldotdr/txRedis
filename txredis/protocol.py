@@ -53,7 +53,6 @@ Command doc strings taken from the CommandReference wiki page.
 import decimal
 
 from twisted.internet import defer, protocol
-from twisted.protocols import basic
 from twisted.protocols import policies
 
 
