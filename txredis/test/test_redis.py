@@ -31,31 +31,6 @@ class General(CommandsTestBase):
     """
 
     @defer.inlineCallbacks
-    def test_concurrent(self):
-        """Test ability to handle many large responses at the same time"""
-        num_lists = 100
-        items_per_list = 50
-
-        # 1. Generate and fill lists
-        lists = []
-        for l in range(0, num_lists):
-            key = 'list-%d' % l
-            yield self.redis.delete(key)
-            for i in range(0, items_per_list):
-                yield self.redis.push(key, 'item-%d' % i)
-            lists.append(key)
-
-        # 2. Make requests to get all lists
-        ds = []
-        for key in lists:
-            d = self.redis.lrange(key, 0, items_per_list)
-            ds.append(d)
-
-        # 3. Wait on all responses and make sure we got them all
-        r = yield defer.DeferredList(ds)
-        self.assertEquals(len(r), num_lists)
-
-    @defer.inlineCallbacks
     def test_ping(self):
         a = yield self.redis.ping()
         self.assertEqual(a, 'PONG')
@@ -453,6 +428,31 @@ class Strings(CommandsTestBase):
 class Lists(CommandsTestBase):
     """Test commands that operate on lists.
     """
+
+    @defer.inlineCallbacks
+    def test_concurrent(self):
+        """Test ability to handle many large responses at the same time"""
+        num_lists = 100
+        items_per_list = 50
+
+        # 1. Generate and fill lists
+        lists = []
+        for l in range(0, num_lists):
+            key = 'list-%d' % l
+            yield self.redis.delete(key)
+            for i in range(0, items_per_list):
+                yield self.redis.push(key, 'item-%d' % i)
+            lists.append(key)
+
+        # 2. Make requests to get all lists
+        ds = []
+        for key in lists:
+            d = self.redis.lrange(key, 0, items_per_list)
+            ds.append(d)
+
+        # 3. Wait on all responses and make sure we got them all
+        r = yield defer.DeferredList(ds)
+        self.assertEquals(len(r), num_lists)
 
     @defer.inlineCallbacks
     def test_push(self):
