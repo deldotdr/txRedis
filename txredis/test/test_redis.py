@@ -2,10 +2,12 @@
 import time
 from decimal import Decimal
 
+from twisted.internet import error
 from twisted.internet import protocol
 from twisted.internet import reactor
 from twisted.internet import defer
-from twisted.test.proto_helpers import StringTransport
+from twisted.internet.task import Clock
+from twisted.test.proto_helpers import StringTransportWithDisconnection
 from twisted.trial import unittest
 
 from txredis.protocol import Redis
@@ -1041,12 +1043,51 @@ class BlockingListOperartions(CommandsTestBase):
         r2.transport.loseConnection()
 
 
+class Network(unittest.TestCase):
+
+    def setUp(self):
+        self.proto = Redis()
+        self.clock = Clock()
+        self.proto.callLater = self.clock.callLater
+        self.transport = StringTransportWithDisconnection()
+        self.transport.protocol = self.proto
+        self.proto.makeConnection(self.transport)
+
+    def test_request_while_disconnected(self):
+        # fake disconnect
+        self.proto._disconnected = True
+
+        d = self.proto.get('foo')
+        self.assertFailure(d, RuntimeError)
+
+        def checkMessage(error):
+            self.assertEquals(str(error), 'Not connected')
+
+        return d.addCallback(checkMessage)
+
+    def test_disconnect_during_request(self):
+        d1 = self.proto.get("foo")
+        d2 = self.proto.get("bar")
+        self.assertEquals(len(self.proto._request_queue.waiting), 2)
+
+        self.transport.loseConnection()
+        done = defer.DeferredList([d1, d2], consumeErrors=True)
+
+        def checkFailures(results):
+            self.assertEquals(len(self.proto._request_queue.waiting), 0)
+            for success, result in results:
+                self.assertFalse(success)
+                result.trap(error.ConnectionDone)
+
+        return done.addCallback(checkFailures)
+
+
 class Protocol(unittest.TestCase):
 
     def setUp(self):
         self.proto = Redis()
-        self.transport = StringTransport()
-        self.transport.proto = self.proto
+        self.transport = StringTransportWithDisconnection()
+        self.transport.protocol = self.proto
         self.proto.makeConnection(self.transport)
 
     def sendResponse(self, data):
