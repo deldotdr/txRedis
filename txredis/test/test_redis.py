@@ -1068,13 +1068,13 @@ class Network(unittest.TestCase):
     def test_disconnect_during_request(self):
         d1 = self.proto.get("foo")
         d2 = self.proto.get("bar")
-        self.assertEquals(len(self.proto._request_queue.waiting), 2)
+        self.assertEquals(len(self.proto._request_queue), 2)
 
         self.transport.loseConnection()
         done = defer.DeferredList([d1, d2], consumeErrors=True)
 
         def checkFailures(results):
-            self.assertEquals(len(self.proto._request_queue.waiting), 0)
+            self.assertEquals(len(self.proto._request_queue), 0)
             for success, result in results:
                 self.assertFalse(success)
                 result.trap(error.ConnectionDone)

@@ -52,6 +52,7 @@ Command doc strings taken from the CommandReference wiki page.
 
 import decimal
 
+from collections import deque
 from twisted.internet import defer, protocol
 from twisted.protocols import policies
 
@@ -76,14 +77,6 @@ class InvalidData(RedisError):
     pass
 
 
-class RedisRequestQueue(defer.DeferredQueue):
-
-    def failAll(self, reason):
-        """Trigger errback on all waiting deferreds"""
-        while self.waiting:
-            self.waiting.pop(0).errback(reason)
-
-
 class Redis(protocol.Protocol, policies.TimeoutMixin):
     """The main Redis client."""
 
@@ -102,7 +95,7 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
         self._disconnected = False
         self._multi_bulk_length = 0
         self._multi_bulk_reply = []
-        self._request_queue = RedisRequestQueue()
+        self._request_queue = deque()
 
     def dataReceived(self, data):
         """Receive data.
@@ -176,6 +169,11 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
                 elif self._multi_bulk_length == 0:
                     self.multiBulkDataReceived()
 
+    def failRequests(self, reason):
+        while self._request_queue:
+            d = self._request_queue.popleft()
+            d.errback(reason)
+
     def connectionLost(self, reason):
         """Called when the connection is lost.
 
@@ -183,7 +181,7 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
 
         """
         self._disconnected = True
-        self._request_queue.failAll(reason)
+        self.failRequests(reason)
 
     def timeoutConnection(self):
         """Called when the connection times out.
@@ -191,7 +189,7 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
         Will fail all pending requests with a TimeoutError.
 
         """
-        self._request_queue.failAll(defer.TimeoutError("Connection timeout"))
+        self.failRequests(defer.TimeoutError("Connection timeout"))
         self.transport.loseConnection()
 
     def errorReceived(self, data):
@@ -255,7 +253,8 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
 
     def responseReceived(self, reply):
         """Push a reply to the waiting request."""
-        self._request_queue.put(reply)
+        if self._request_queue:
+            self._request_queue.popleft().callback(reply)
 
     def getResponse(self):
         """
@@ -263,7 +262,10 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
         """
         if self._disconnected:
             return defer.fail(RuntimeError("Not connected"))
-        return self._request_queue.get()
+
+        d = defer.Deferred()
+        self._request_queue.append(d)
+        return d
 
     def _encode(self, s):
         """Encode a value for sending to the server."""
