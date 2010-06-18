@@ -318,17 +318,17 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         return res
 
     # Commands operating on the key space
-    @defer.inlineCallbacks
     def keys(self, pattern):
         """
         """
         self._write('KEYS %s\r\n' % pattern)
-        res = yield self.get_response()
-        if res is not None:
-            res.sort()# XXX is sort ok?
-        else:
-            res = []
-        defer.returnValue(res)
+        def post_process(res):
+            if res is not None:
+                res.sort()# XXX is sort ok?
+            else:
+                res = []
+            return res
+        return self.get_response().addCallback(post_process)
 
     def randomkey(self):
         """
@@ -690,15 +690,15 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         ))
         return self.get_response()
 
-    @defer.inlineCallbacks
     def sinter(self, *args):
         """
         """
         self._write('SINTER %s\r\n' % ' '.join(args))
-        res = yield self.get_response()
-        if type(res) is list:
-            res = set(res)
-        defer.returnValue(res)
+        def post_process(res):
+            if type(res) is list:
+                res = set(res)
+            return res
+        return self.get_response().addCallback(post_process)
 
     def sinterstore(self, dest, *args):
         """
@@ -706,25 +706,25 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write('SINTERSTORE %s %s\r\n' % (dest, ' '.join(args)))
         return self.get_response()
 
-    @defer.inlineCallbacks
     def smembers(self, key):
         """
         """
         self._write('SMEMBERS %s\r\n' % key)
-        res = yield self.get_response()
-        if type(res) is list:
-            res = set(res)
-        defer.returnValue(res)
+        def post_process(res):
+            if type(res) is list:
+                res = set(res)
+            return res
+        return self.get_response().addCallback(post_process)
 
-    @defer.inlineCallbacks
     def sunion(self, *args):
         """
         """
         self._write('SUNION %s\r\n' % ' '.join(args))
-        res = yield self.get_response()
-        if type(res) is list:
-            res = set(res)
-        defer.returnValue(res)
+        def post_process(res):
+            if type(res) is list:
+                res = set(res)
+            return res
+        return self.get_response().addCallback(post_process)
 
     def sunionstore(self, dest, *args):
         """
@@ -767,20 +767,22 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write('LASTSAVE\r\n')
         return self.get_response()
 
-    @defer.inlineCallbacks
     def info(self):
         """
         """
         self._write('INFO\r\n')
-        info = dict()
-        res = yield self.get_response()
-        res = res.split('\r\n')
-        for l in res:
-            if not l:
-                continue
-            k, v = l.split(':')
-            info[k] = int(v) if v.isdigit() else v
-        defer.returnValue(info)
+
+        def post_process(res):
+            info = dict()
+            res = res.split('\r\n')
+            for l in res:
+                if not l:
+                    continue
+                k, v = l.split(':')
+                info[k] = int(v) if v.isdigit() else v
+            return info
+        return self.get_response().addCallback(post_process)
+
 
     def sort(self, key, by=None, get=None, start=None, num=None, desc=False, alpha=False):
         """
