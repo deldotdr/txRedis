@@ -323,10 +323,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         """
         self._write('KEYS %s\r\n' % pattern)
-        # return self.get_response().split()
-        r = yield self.get_response()
-        if r is not None:
-            res = r.split()
+        res = yield self.get_response()
+        if res is not None:
             res.sort()# XXX is sort ok?
         else:
             res = []
