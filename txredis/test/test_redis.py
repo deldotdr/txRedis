@@ -298,6 +298,13 @@ class Strings(CommandsTestBase):
     """
 
     @defer.inlineCallbacks
+    def test_blank(self):
+        yield self.redis.set('a', "")
+
+        r = yield self.redis.get('a')
+        self.assertEquals("", r)
+
+    @defer.inlineCallbacks
     def test_set(self):
         a = yield self.redis.set('a', 'pippo')
         self.assertEqual(a, 'OK')
@@ -430,6 +437,18 @@ class Strings(CommandsTestBase):
 class Lists(CommandsTestBase):
     """Test commands that operate on lists.
     """
+
+    @defer.inlineCallbacks
+    def test_blank_item(self):
+        key = 'test:list'
+        yield self.redis.delete(key)
+
+        chars = ["a", "", "c"]
+        for char in chars:
+            yield self.redis.push(key, char)
+
+        r = yield self.redis.lrange(key, 0, len(chars))
+        self.assertEquals(["c", "", "a"], r)
 
     @defer.inlineCallbacks
     def test_concurrent(self):
@@ -677,6 +696,19 @@ class Lists(CommandsTestBase):
 class Sets(CommandsTestBase):
     """Test commands that operate on sets.
     """
+
+    @defer.inlineCallbacks
+    def test_blank(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('s')
+        a = yield r.sadd('s', "")
+        ex = 1
+        t(a, ex)
+        a = yield r.smembers('s')
+        ex = set([""])
+        t(a, ex)
 
     @defer.inlineCallbacks
     def test_sadd(self):
@@ -967,6 +999,15 @@ class Sets(CommandsTestBase):
 class Hash(CommandsTestBase):
     """Test commands that operate on hashes.
     """
+
+    @defer.inlineCallbacks
+    def test_blank(self):
+        yield self.redis.delete('h')
+        yield self.redis.hset('h', 'blank', "")
+        a = yield self.redis.hget('h', 'blank')
+        self.assertEquals(a, '')
+        a = yield self.redis.hgetall('h')
+        self.assertEquals(a, ['blank', ''])
 
     @defer.inlineCallbacks
     def test_hset(self):

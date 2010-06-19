@@ -91,9 +91,9 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
         self.db = db
         self.errors = errors
         self._buffer = ''
-        self._bulk_length = 0
+        self._bulk_length = None
         self._disconnected = False
-        self._multi_bulk_length = 0
+        self._multi_bulk_length = None
         self._multi_bulk_reply = []
         self._request_queue = deque()
 
@@ -109,7 +109,7 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
             self.resetTimeout()
 
             # if we're expecting bulk data, read that many bytes
-            if self._bulk_length:
+            if self._bulk_length != None:
                 # wait until there's enough data in the buffer
                 if len(self._buffer) < self._bulk_length:
                     return
@@ -216,7 +216,7 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
 
     def bulkDataReceived(self, data):
         """Bulk data response received."""
-        self._bulk_length = 0
+        self._bulk_length = None
 
         # try to convert to int/decimal, otherwise treat as string
         try:
@@ -248,7 +248,7 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
         """
         reply = self._multi_bulk_reply
         self._multi_bulk_reply = []
-        self._multi_bulk_length = 0
+        self._multi_bulk_length = None
         self.responseReceived(reply)
 
     def responseReceived(self, reply):
