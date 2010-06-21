@@ -51,7 +51,7 @@ Command doc strings taken from the CommandReference wiki page.
 
 
 import decimal
-from itertools import chain
+from itertools import chain, tee, izip
 
 from twisted.internet import defer
 from twisted.protocols import basic
@@ -905,12 +905,38 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         cmd = '*%s\r\n' % len(args) + ''.join(cmds)
         self._write(cmd)
 
-    def hset(self, key, field, value):
-        self._mb_cmd('HSET', key, field, value)
+    def hmset(self, key, in_dict):
+        fields = list(chain.from_iterable(in_dict.iteritems()))
+        self._mb_cmd('HMSET', *([key] + fields))
+        return self.get_response()
+
+    def hset(self, key, field, value, preserve=False):
+        if preserve:
+            self._mb_cmd('HSETNX', key, field, value)
+        else:
+            self._mb_cmd('HSET', key, field, value)
         return self.get_response()
 
     def hget(self, key, field):
-        self._mb_cmd('HGET', key, field)
+        if isinstance(field, basestring):
+            self._mb_cmd('HGET', key, field)
+        else:
+            self._mb_cmd('HMGET', *([key] + field))
+
+        def post_process(values):
+            if not values:
+                return values
+            return dict(izip(field, values))
+
+        return self.get_response().addCallback(post_process)
+    hmget = hget
+
+    def hkeys(self, key):
+        self._mb_cmd('HKEYS', key)
+        return self.get_response()
+
+    def hvals(self, key):
+        self._mb_cmd('HVALS', key)
         return self.get_response()
 
     def hincr(self, key, field, amount=1):
@@ -931,6 +957,13 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
 
     def hgetall(self, key):
         self._mb_cmd('HGETALL', key)
-        return self.get_response()
+        def post_process(key_vals):
+            res = {}
+            i = 0
+            while i < len(key_vals) - 1:
+                res[key_vals[i]] = key_vals[i + 1]
+                i += 2
+            return res
+        return self.get_response().addCallback(post_process)
 
 
