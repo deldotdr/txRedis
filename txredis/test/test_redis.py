@@ -194,6 +194,34 @@ class General(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_substr(self):
+        r = self.redis
+        t = self.assertEqual
+
+        string = 'This is a string'
+        r.set('s', string)
+        a = yield r.substr('s', 0, 3)
+        ex = 'This'
+        t(a, ex)
+
+
+    @defer.inlineCallbacks
+    def test_append(self):
+        r = self.redis
+        t = self.assertEqual
+
+        string = 'some_string'
+        a = yield r.set('q', string)
+        ex = 'OK'
+        t(a, ex)
+
+        addition = 'foo'
+        a = yield r.append('q', addition)
+        ex = len(string + addition)
+        t(a, ex)
+
+
+    @defer.inlineCallbacks
     def test_ttl(self):
         r = self.redis
         t = self.assertEqual
@@ -979,6 +1007,7 @@ class LargeMultiBulk(CommandsTestBase):
         r = self.redis
         t = self.assertEqual
 
+        yield r.delete('s')
         data = set(range(1, 10000))
         for i in data:
             r.sadd('s', i)

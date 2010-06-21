@@ -324,6 +324,15 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._mb_cmd(command, *list(chain.from_iterable(mapping.iteritems())))
         return self.get_response()
 
+    def append(self, key, value):
+        self._write('APPEND %s %s\r\n%s\r\n' % (
+                    key, len(value), value))
+        return self.get_response()
+
+    def substr(self, key, start, end):
+        self._mb_cmd('SUBSTR', key, start, end)
+        return self.get_response()
+
     def get(self, key):
         """
         """
