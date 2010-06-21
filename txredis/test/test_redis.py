@@ -118,7 +118,8 @@ class General(CommandsTestBase):
         a = yield r.set('a', 'a')
         ex = 'OK'
         t(a, ex)
-        a = yield isinstance((yield r.randomkey()), str)
+        random_key = yield r.randomkey()
+        a = yield isinstance(random_key, basestring)
         ex = True
         t(a, ex)
 
@@ -181,7 +182,7 @@ class General(CommandsTestBase):
         a = yield r.ttl('a')
         ex = 10
         t(a, ex)
-        a = yield r.expire('a', 0)
+        a = yield r.expire('a', 1)
         ex = 0
         t(a, ex)
 
@@ -435,7 +436,7 @@ class Lists(CommandsTestBase):
 
         a = yield r.delete('l')
         a = yield r.push('l', 'a')
-        ex = 'OK'
+        ex = 1
         t(a, ex)
         a = yield r.set('a', 'a')
         ex = 'OK'
@@ -451,13 +452,13 @@ class Lists(CommandsTestBase):
 
         a = yield r.delete('l')
         a = yield r.push('l', 'a')
-        ex = 'OK'
+        ex = 1
         t(a, ex)
         a = yield r.llen('l')
         ex = 1
         t(a, ex)
         a = yield r.push('l', 'a')
-        ex = 'OK'
+        ex = 2
         t(a, ex)
         a = yield r.llen('l')
         ex = 2
@@ -470,16 +471,16 @@ class Lists(CommandsTestBase):
 
         a = yield r.delete('l')
         a = yield r.lrange('l', 0, 1)
-        ex = None # redis.py used empty list, but should be None?
+        ex = []
         t(a, ex)
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 1
         t(a, ex)
         a = yield r.lrange('l', 0, 1)
         ex = [u'aaa']
         t(a, ex)
         a = yield r.push('l', 'bbb')
-        ex = 'OK'
+        ex = 2
         t(a, ex)
         a = yield r.lrange('l', 0, 0)
         ex = [u'aaa']
@@ -504,13 +505,13 @@ class Lists(CommandsTestBase):
         ex = ResponseError('OK')
         t(str(a), str(ex))
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 1
         t(a, ex)
         a = yield r.push('l', 'bbb')
-        ex = 'OK'
+        ex = 2
         t(a, ex)
         a = yield r.push('l', 'ccc')
-        ex = 'OK'
+        ex = 3
         t(a, ex)
         a = yield r.ltrim('l', 0, 1)
         ex = 'OK'
@@ -533,14 +534,14 @@ class Lists(CommandsTestBase):
         yield r.delete('l')
         yield r.lindex('l', 0)
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 1
         t(a, ex)
         a = yield r.lindex('l', 0)
         ex = u'aaa'
         t(a, ex)
         yield r.lindex('l', 2)
         a = yield r.push('l', 'ccc')
-        ex = 'OK'
+        ex = 2
         t(a, ex)
         a = yield r.lindex('l', 1)
         ex = u'ccc'
@@ -557,10 +558,10 @@ class Lists(CommandsTestBase):
         yield r.delete('l')
         yield r.pop('l')
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 1
         t(a, ex)
         a = yield r.push('l', 'bbb')
-        ex = 'OK'
+        ex = 2
         t(a, ex)
         a = yield r.pop('l')
         ex = u'aaa'
@@ -570,10 +571,10 @@ class Lists(CommandsTestBase):
         t(a, ex)
         yield r.pop('l')
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 1
         t(a, ex)
         a = yield r.push('l', 'bbb')
-        ex = 'OK'
+        ex = 2
         t(a, ex)
         a = yield r.pop('l', tail=True)
         ex = u'bbb'
@@ -595,7 +596,7 @@ class Lists(CommandsTestBase):
         ex = ResponseError('no such key')
         t(str(a), str(ex))
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 1
         t(a, ex)
         a = yield r.lset('l', 1, 'a')
         ex = ResponseError('index out of range')
@@ -614,13 +615,13 @@ class Lists(CommandsTestBase):
 
         yield r.delete('l')
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 1
         t(a, ex)
         a = yield r.push('l', 'bbb')
-        ex = 'OK'
+        ex = 2
         t(a, ex)
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 3
         t(a, ex)
         a = yield r.lrem('l', 'aaa')
         ex = 2
@@ -629,10 +630,10 @@ class Lists(CommandsTestBase):
         ex = [u'bbb']
         t(a, ex)
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 2
         t(a, ex)
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 3
         t(a, ex)
         a = yield r.lrem('l', 'aaa', 1)
         ex = 1
@@ -867,16 +868,16 @@ class Sets(CommandsTestBase):
 
         yield r.delete('l')
         a = yield r.push('l', 'ccc')
-        ex = 'OK'
+        ex = 1
         t(a, ex)
         a = yield r.push('l', 'aaa')
-        ex = 'OK'
+        ex = 2
         t(a, ex)
         a = yield r.push('l', 'ddd')
-        ex = 'OK'
+        ex = 3
         t(a, ex)
         a = yield r.push('l', 'bbb')
-        ex = 'OK'
+        ex = 4
         t(a, ex)
         a = yield r.sort('l', alpha=True)
         ex = [u'aaa', u'bbb', u'ccc', u'ddd']
@@ -946,4 +947,16 @@ class Hash(CommandsTestBase):
         a = yield r.hgetall('d')
         ex = ['k', 'v', 'f', 's']
         t(a, ex)
+
+class LargeMultiBulk(CommandsTestBase):
+    @defer.inlineCallbacks
+    def test_large_multibulk(self):
+        r = self.redis
+        t = self.assertEqual
+
+        data = set(range(1, 10000))
+        for i in data:
+            r.sadd('s', i)
+        res = yield r.smembers('s')
+        t(res, data)
 

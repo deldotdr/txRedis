@@ -67,18 +67,18 @@ class InvalidData(RedisError): pass
 class Redis(basic.LineReceiver, policies.TimeoutMixin):
     """The main Redis client.
     """
-
     ERROR = "-"
     STATUS = "+"
     INTEGER = ":"
     BULK = "$"
     MULTI_BULK = "*"
+    MAX_LENGTH = 99999
+    timeOut = 60
 
     def __init__(self, db=None, charset='utf8', errors='strict'):
         self.charset = charset
         self.errors = errors
         self.db = db
-
         self.bulk_length = 0
         self.multi_bulk_length = 0
         self.multi_bulk_reply = []
@@ -129,6 +129,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
                 return
             elif self.multi_bulk_length == 0:
                 self.multiBulkDataReceived()
+        else:
+            # if the line we get doesn't match any of the criteria above, simply send
+            # the complete thing to be processed as a raw data string
+            self.setRawMode()
+            self.rawDataReceived(line)
+
 
     def rawDataReceived(self, data):
         """
@@ -136,11 +142,53 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @todo buffer raw data in case a bulk piece comes in more than one
         part
         """
+        # check if we're reading multi-bulk data
+        self.resetTimeout()
         reply_len = self.bulk_length
-        bulk_data = data[:reply_len]
-        rest_data = data[reply_len + 2:]
-        self.bulkDataReceived(bulk_data)
-        self.setLineMode(extra=rest_data)
+        if self.multi_bulk_length:
+            # consume data as much as possible
+            # NB: This isn't as clean as I'd like, however it's *absolutely essential*
+            # in the case of a large multi-bulk reply. The standard approach of simply
+            # calling self.setLineMode(extra=rest_data), where rest_data can be a very
+            # large string can lead to exceeding maximum recursion depth since self.dataReceived
+            # will call lineReceived which will then change to rawMode forcing the calling
+            # of rawDataReceived etc. etc.
+            raw = True
+            while True:
+                if not data:
+                    break
+                if raw:
+                    if len(data) >= reply_len:
+                        bulk_data = data[:reply_len]
+                        if not bulk_data:
+                            break
+                        data = data[reply_len + 2:]
+                        self.bulkDataReceived(bulk_data)
+                        raw = False
+                    else:
+                        break
+                else:
+                    if data[0] == self.BULK:
+                        # bulk element received
+                        try:
+                            bulk, data = data.split(self.delimiter, 1)
+                        except ValueError:
+                            break
+                        mblen = int(bulk[1:])
+                        self.bulk_length = reply_len = mblen
+                        raw = True
+                    else:
+                        # we don't have enough data
+                        break
+            if data:
+                self.setLineMode(extra=data)
+            else:
+                self.setLineMode()
+        else:
+            bulk_data = data[:reply_len]
+            rest_data = data[reply_len + 2:]
+            self.bulkDataReceived(bulk_data)
+            self.setLineMode(extra=rest_data)
 
     def errorReceived(self, data):
         """
@@ -659,9 +707,10 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         """
         value = self._encode(value)
-        self._write('SADD %s %s\r\n%s\r\n' % (
+        cmd = 'SADD %s %s\r\n%s\r\n' % (
             key, len(value), value
-        ))
+        )
+        self._write(cmd)
         return self.get_response()
 
     def srem(self, key, value):
