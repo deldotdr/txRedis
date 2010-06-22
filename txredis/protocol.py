@@ -331,7 +331,9 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             command = 'MSETNX'
         else:
             command = 'MSET'
-        self._mb_cmd(command, *list(chain.from_iterable(mapping.iteritems())))
+        #Python2.5 compliance (no chain.from_iterable) 
+        #self._mb_cmd(command, *list(chain.from_iterable(mapping.iteritems())))
+        self._mb_cmd(command, *list(chain(*mapping.items())))
         return self.get_response()
 
     def append(self, key, value):
@@ -916,7 +918,9 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         self._write(cmd)
 
     def hmset(self, key, in_dict):
-        fields = list(chain.from_iterable(in_dict.iteritems()))
+        #Python2.5 compliance (no chain.from_iterable) 
+        #fields = list(chain.from_iterable(in_dict.iteritems()))
+        fields = list(chain(*in_dict.items()))
         self._mb_cmd('HMSET', *([key] + fields))
         return self.get_response()
 
