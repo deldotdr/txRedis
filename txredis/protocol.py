@@ -1,6 +1,17 @@
 """
 @file protocol.py
 
+@author Reza Lotun (rlotun@gmail.com)
+@data 06/22/10
+Fix maximum recursion bug that would be set off by large bulk replies.
+Added multi-bulk command sending support.
+Added support for hash commands.
+Added support for sorted set.
+Added support for new basic commands APPEND and SUBSTR.
+Removed forcing of float data to be decimal.
+Removed inlineCallbacks within protocol code.
+Added setuptools support to setup.py
+
 @author Dorian Raymer
 @data 02/01/10
 Added BLPOP/BRPOP and RPOPLPUSH to list commands.
@@ -50,7 +61,6 @@ Command doc strings taken from the CommandReference wiki page.
 """
 
 
-import decimal
 from itertools import chain, tee, izip
 
 from twisted.internet import defer
@@ -228,8 +238,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             element = data
         else:
             try:
-                element = int(data) if data.find('.') == -1 else decimal.Decimal(data)
-            except (ValueError, decimal.InvalidOperation):
+                element = float(data) if '.' in data else int(data)
+            except ValueError:
                 element = data.decode(self.charset)
 
         if self.multi_bulk_length > 0:
@@ -966,4 +976,86 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             return res
         return self.get_response().addCallback(post_process)
 
+    # # # # # # # # #
+    # Sorted Set Commands:
+    # ZADD
+    # ZREM
+    # ZINCRBY
+    # ZRANK
+    # ZREVRANK
+    # ZRANGE
+    # ZREVRANGE
+    # ZRANGEBYSCORE
+    # ZCARD
+    # ZSCORE
+    # ZREMRANGEBYRANK
+    # ZREMRANGEBYSCORE
+    # ZUNIONSTORE / ZINTERSTORE
+    def zadd(self, key, member, score):
+        self._mb_cmd('ZADD', key, score, member)
+        return self.get_response()
+
+    def zrem(self, key, member):
+        self._mb_cmd('ZREM', key, member)
+        return self.get_response()
+
+    def zincr(self, key, member, incr=1):
+        self._mb_cmd('ZINCRBY', key, incr, member)
+        return self.get_response()
+
+    def zrank(self, key, member, reverse=False):
+        cmd = 'ZREVRANK' if reverse else 'ZRANK'
+        self._mb_cmd(cmd, key, member)
+        return self.get_response()
+
+    def zrange(self, key, start, end, withscores=False, reverse=False):
+        cmd = 'ZREVRANGE' if reverse else 'ZRANGE'
+        args = [cmd, key, start, end]
+        if withscores:
+            args.append('WITHSCORES')
+        self._mb_cmd(*args)
+        dfr = self.get_response()
+
+        def post_process(vals_and_scores):
+            # return list of (val, score) tuples
+            res = []
+            bins = len(vals_and_scores) - 1
+            i = 0
+            while i < bins:
+                res.append((vals_and_scores[i], vals_and_scores[i+1]))
+                i += 2
+            return res
+
+        if withscores:
+            dfr.addCallback(post_process)
+        return dfr
+
+    def zcard(self, key):
+        self._write('ZCARD %s\r\n' % key)
+        return self.get_response()
+
+    def zscore(self, key, element):
+        self._mb_cmd('ZSCORE', key, element)
+        return self.get_response()
+
+    def zrangebyscore(self, key, min='-inf', max='+inf', offset=None, count=None, withscores=False):
+        args = ['ZRANGEBYSCORE', key, min, max]
+        if offset and count:
+            args.extend(['LIMIT', offset, count])
+        if withscores:
+            args.append('WITHSCORES')
+        self._mb_cmd(*args)
+        dfr = self.get_response()
+        def post_process(vals_and_scores):
+            # return list of (val, score) tuples
+            res = []
+            bins = len(vals_and_scores) - 1
+            i = 0
+            while i < bins:
+                res.append((vals_and_scores[i], vals_and_scores[i+1]))
+                i += 2
+            return res
+        if withscores:
+            dfr.addCallback(post_process)
+        return dfr
 
