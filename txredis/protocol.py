@@ -77,7 +77,7 @@ class InvalidData(RedisError):
     pass
 
 
-class Redis(protocol.Protocol, policies.TimeoutMixin):
+class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     """The main Redis client."""
 
     ERROR = "-"
@@ -205,6 +205,12 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
             reply = data
         self.responseReceived(reply)
 
+    def handleMultiBulkElement(self, element):
+        self._multi_bulk_reply.append(element)
+        self._multi_bulk_length = self._multi_bulk_length - 1
+        if self._multi_bulk_length == 0:
+            self.multiBulkDataReceived()
+
     def integerReceived(self, data):
         """Integer response received."""
         try:
@@ -212,6 +218,10 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
         except ValueError:
             reply = InvalidResponse("Cannot convert data '%s' to integer"
                                     % data)
+        if self._multi_bulk_length > 0:
+            self.handleMultiBulkElement(reply)
+            return
+
         self.responseReceived(reply)
 
     def bulkDataReceived(self, data):
@@ -231,10 +241,7 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
 
         # store bulks we're receiving as part of a multi-bulk response
         if self._multi_bulk_length > 0:
-            self._multi_bulk_reply.append(element)
-            self._multi_bulk_length = self._multi_bulk_length - 1
-            if self._multi_bulk_length == 0:
-                self.multiBulkDataReceived()
+            self.handleMultiBulkElement(element)
             return
 
         self.responseReceived(element)
@@ -249,6 +256,9 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
         reply = self._multi_bulk_reply
         self._multi_bulk_reply = []
         self._multi_bulk_length = None
+        self.handleCompleteMultiBulkData(reply)
+
+    def handleCompleteMultiBulkData(self, reply):
         self.responseReceived(reply)
 
     def responseReceived(self, reply):
@@ -283,9 +293,17 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
         """Send data."""
         self.transport.write(s)
 
+
+class Redis(RedisBase):
+    """The main Redis client."""
+
+    def __init__(self, *args, **kwargs):
+        RedisBase.__init__(self, *args, **kwargs)
+
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # REDIS COMMANDS
     #
+
     def ping(self):
         """
         Test command. Expect PONG as a reply.
@@ -372,11 +390,9 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
         """
         """
         self._write('KEYS %s\r\n' % pattern)
-        # return self.getResponse().split()
-        r = yield self.getResponse()
-        if r is not None:
-            res = r
-            res.sort()# XXX is sort ok?
+        res = yield self.getResponse()
+        if res is not None:
+            res.sort()
         else:
             res = []
         defer.returnValue(res)
@@ -900,3 +916,130 @@ class Redis(protocol.Protocol, policies.TimeoutMixin):
     def hgetall(self, key):
         self._cmd('HGETALL', key)
         return self.getResponse()
+
+    def publish(self, channel, message):
+        """
+        Publishes a message to all subscribers of a specified channel.
+        """
+        self._write('PUBLISH %s %s\r\n%s\r\n'
+                    % (channel, len(message), message))
+        return self.getResponse()
+
+
+class RedisSubscriber(RedisBase):
+    """
+    Redis client for subscribing & listening for published events.  Redis
+    connections listening to events are expected to not issue commands other
+    than subscribe & unsubscribe, and therefore no other commands are available
+    on a RedisSubscriber instance.
+    """
+
+    def __init__(self, *args, **kwargs):
+        RedisBase.__init__(self, *args, **kwargs)
+        self.setTimeout(None)
+
+    def handleCompleteMultiBulkData(self, reply):
+        """
+        Overrides RedisBase.handleCompleteMultiBulkData to intercept published
+        message events.
+        """
+        if reply[0] == u"message":
+            channel, message = reply[1:]
+            self.messageReceived(channel, message)
+        elif reply[0] == u"pmessage":
+            pattern, channel, message = reply[1:]
+            self.messageReceived(channel, message)
+        elif reply[0] == u"subscribe":
+            channel, numSubscribed = reply[1:]
+            self.channelSubscribed(channel, numSubscribed)
+        elif reply[0] == u"unsubscribe":
+            channel, numSubscribed = reply[1:]
+            self.channelUnsubscribed(channel, numSubscribed)
+        elif reply[0] == u"psubscribe":
+            channelPattern, numSubscribed = reply[1:]
+            self.channelPatternSubscribed(channelPattern, numSubscribed)
+        elif reply[0] == u"punsubscribe":
+            channelPattern, numSubscribed = reply[1:]
+            self.channelPatternUnsubscribed(channelPattern, numSubscribed)
+        else:
+            RedisBase.handleCompleteMultiBulkData(self, reply)
+
+    def messageReceived(self, channel, message):
+        """
+        Called when this connection is subscribed to a channel that
+        has received a message published on it.
+        """
+        pass
+
+    def channelSubscribed(self, channel, numSubscriptions):
+        """
+        Called when a channel is subscribed to.
+        """
+        pass
+
+    def channelUnsubscribed(self, channel, numSubscriptions):
+        """
+        Called when a channel is unsubscribed from.
+        """
+        pass
+
+    def channelPatternSubscribed(self, channel, numSubscriptions):
+        """
+        Called when a channel patern is subscribed to.
+        """
+        pass
+
+    def channelPatternUnsubscribed(self, channel, numSubscriptions):
+        """
+        Called when a channel pattern is unsubscribed from.
+        """
+        pass
+
+    def subscribe(self, *channels):
+        """
+        Begin listening for PUBLISH messages on one or more channels.  When a
+        message is published on one, the messageReceived method will be
+        invoked.  Does not return any value, although the method
+        channelSubscribed will be invoked on confirmation from the server of
+        every subscribed channel.  If a channel is already subscribed to by
+        this connection, then channelSubscribed will not be invoked but the
+        channel will continue to be subscribed to.
+        """
+        self._write("SUBSCRIBE %s\r\n" % ' '.join(channels))
+
+    def unsubscribe(self, *channels):
+        """
+        Terminate listening for PUBLISH messages on one or more channels.  If
+        no channels are passed in, all channels are unsubscribed from.i Does
+        not return any value, but the method channelUnsubscribed will be
+        invokved for each channel that is unsubscribed from.  If a channel is
+        provided that is not subscribed to by this connection, then
+        channelUnsubscribed will not be invoked.
+        """
+        if len(channels) == 0:
+            self._write("UNSUBSCRIBE\r\n")
+        else:
+            self._write("UNSUBSCRIBE %s\r\n" % ' '.join(channels))
+
+    def psubscribe(self, *patterns):
+        """
+        Begin listening for PUBLISH messages on one or more channel patterns.
+        When a message is published on a matching channel, the messageReceived
+        method will be invoked.  Does not return any value, but the method
+        channelPatternSubscribed will be invoked for each channel pattern that
+        is subscribed to.
+        """
+        self._write("PSUBSCRIBE %s\r\n" % ' '.join(patterns))
+
+    def punsubscribe(self, *patterns):
+        """
+        Terminate listening for PUBLISH messages on one or more channel
+        patterns.  If no channel patterns are passed in, all channel patterns
+        are unsubscribed from.  Does not return any value, but the method
+        channelPatternUnsubscribed will be invoked for eeach channel pattern
+        that is unsubscribed from.
+        """
+        if len(patterns) == 0:
+            self._write("PUNSUBSCRIBE\r\n")
+        else:
+            self._write("PUNSUBSCRIBE %s\r\n" % ' '.join(patterns))
