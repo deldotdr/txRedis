@@ -51,7 +51,7 @@ Command doc strings taken from the CommandReference wiki page.
 
 
 import decimal
-from itertools import chain
+from itertools import chain, tee, izip
 
 from collections import deque
 from twisted.internet import defer, protocol
@@ -912,12 +912,38 @@ class Redis(RedisBase):
         cmd = '*%s\r\n' % len(args) + ''.join(cmds)
         self._write(cmd)
 
-    def hset(self, key, field, value):
-        self._mb_cmd('HSET', key, field, value)
+    def hmset(self, key, in_dict):
+        fields = list(chain.from_iterable(in_dict.iteritems()))
+        self._mb_cmd('HMSET', *([key] + fields))
+        return self.getResponse()
+
+    def hset(self, key, field, value, preserve=False):
+        if preserve:
+            self._mb_cmd('HSETNX', key, field, value)
+        else:
+            self._mb_cmd('HSET', key, field, value)
         return self.getResponse()
 
     def hget(self, key, field):
-        self._mb_cmd('HGET', key, field)
+        if isinstance(field, basestring):
+            self._mb_cmd('HGET', key, field)
+        else:
+            self._mb_cmd('HMGET', *([key] + field))
+
+        def post_process(values):
+            if not values:
+                return values
+            return dict(izip(field, values))
+
+        return self.getResponse().addCallback(post_process)
+    hmget = hget
+
+    def hkeys(self, key):
+        self._mb_cmd('HKEYS', key)
+        return self.getResponse()
+
+    def hvals(self, key):
+        self._mb_cmd('HVALS', key)
         return self.getResponse()
 
     def hincr(self, key, field, amount=1):
@@ -938,7 +964,14 @@ class Redis(RedisBase):
 
     def hgetall(self, key):
         self._mb_cmd('HGETALL', key)
-        return self.getResponse()
+        def post_process(key_vals):
+            res = {}
+            i = 0
+            while i < len(key_vals) - 1:
+                res[key_vals[i]] = key_vals[i + 1]
+                i += 2
+            return res
+        return self.getResponse().addCallback(post_process)
 
     def publish(self, channel, message):
         """
@@ -947,7 +980,6 @@ class Redis(RedisBase):
         self._write('PUBLISH %s %s\r\n%s\r\n'
                     % (channel, len(message), message))
         return self.getResponse()
-
 
 class RedisSubscriber(RedisBase):
     """
