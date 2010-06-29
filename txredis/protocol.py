@@ -1,6 +1,16 @@
 """
 @file protocol.py
 
+@author Reza Lotun (rlotun@gmail.com)
+@data 06/22/10
+Added multi-bulk command sending support.
+Added support for hash commands.
+Added support for sorted set.
+Added support for new basic commands APPEND and SUBSTR.
+Removed forcing of float data to be decimal.
+Removed inlineCallbacks within protocol code.
+Added setuptools support to setup.py
+
 @author Dorian Raymer
 @data 02/01/10
 Added BLPOP/BRPOP and RPOPLPUSH to list commands.
@@ -50,7 +60,6 @@ Command doc strings taken from the CommandReference wiki page.
 """
 
 
-import decimal
 from itertools import chain, tee, izip
 
 from collections import deque
@@ -229,15 +238,15 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
         """Bulk data response received."""
         self._bulk_length = None
 
-        # try to convert to int/decimal, otherwise treat as string
+        # try to convert to int/float, otherwise treat as string
         try:
             if data is None:
                 element = None
             elif '.' in data:
-                element = decimal.Decimal(data)
+                element = float(data)
             else:
                 element = int(data)
-        except (ValueError, decimal.InvalidOperation):
+        except ValueError:
             element = data.decode(self.charset)
 
         # store bulks we're receiving as part of a multi-bulk response
@@ -980,6 +989,90 @@ class Redis(RedisBase):
         self._write('PUBLISH %s %s\r\n%s\r\n'
                     % (channel, len(message), message))
         return self.getResponse()
+
+    # # # # # # # # #
+    # Sorted Set Commands:
+    # ZADD
+    # ZREM
+    # ZINCRBY
+    # ZRANK
+    # ZREVRANK
+    # ZRANGE
+    # ZREVRANGE
+    # ZRANGEBYSCORE
+    # ZCARD
+    # ZSCORE
+    # ZREMRANGEBYRANK
+    # ZREMRANGEBYSCORE
+    # ZUNIONSTORE / ZINTERSTORE
+    def zadd(self, key, member, score):
+        self._mb_cmd('ZADD', key, score, member)
+        return self.getResponse()
+
+    def zrem(self, key, member):
+        self._mb_cmd('ZREM', key, member)
+        return self.getResponse()
+
+    def zincr(self, key, member, incr=1):
+        self._mb_cmd('ZINCRBY', key, incr, member)
+        return self.getResponse()
+
+    def zrank(self, key, member, reverse=False):
+        cmd = 'ZREVRANK' if reverse else 'ZRANK'
+        self._mb_cmd(cmd, key, member)
+        return self.getResponse()
+
+    def zrange(self, key, start, end, withscores=False, reverse=False):
+        cmd = 'ZREVRANGE' if reverse else 'ZRANGE'
+        args = [cmd, key, start, end]
+        if withscores:
+            args.append('WITHSCORES')
+        self._mb_cmd(*args)
+        dfr = self.getResponse()
+
+        def post_process(vals_and_scores):
+            # return list of (val, score) tuples
+            res = []
+            bins = len(vals_and_scores) - 1
+            i = 0
+            while i < bins:
+                res.append((vals_and_scores[i], vals_and_scores[i+1]))
+                i += 2
+            return res
+
+        if withscores:
+            dfr.addCallback(post_process)
+        return dfr
+
+    def zcard(self, key):
+        self._write('ZCARD %s\r\n' % key)
+        return self.getResponse()
+
+    def zscore(self, key, element):
+        self._mb_cmd('ZSCORE', key, element)
+        return self.getResponse()
+
+    def zrangebyscore(self, key, min='-inf', max='+inf', offset=None, count=None, withscores=False):
+        args = ['ZRANGEBYSCORE', key, min, max]
+        if offset and count:
+            args.extend(['LIMIT', offset, count])
+        if withscores:
+            args.append('WITHSCORES')
+        self._mb_cmd(*args)
+        dfr = self.getResponse()
+        def post_process(vals_and_scores):
+            # return list of (val, score) tuples
+            res = []
+            bins = len(vals_and_scores) - 1
+            i = 0
+            while i < bins:
+                res.append((vals_and_scores[i], vals_and_scores[i+1]))
+                i += 2
+            return res
+        if withscores:
+            dfr.addCallback(post_process)
+        return dfr
+
 
 class RedisSubscriber(RedisBase):
     """

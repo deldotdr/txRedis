@@ -1,6 +1,5 @@
 
 import time
-from decimal import Decimal
 
 from twisted.internet import error
 from twisted.internet import protocol
@@ -375,7 +374,7 @@ class Strings(CommandsTestBase):
         self.assertEqual(a, 0)
 
         a = yield self.redis.get('b')
-        self.assertEqual(a, Decimal("105.2"))
+        self.assertEqual(a, 105.2)
 
     @defer.inlineCallbacks
     def test_get(self):
@@ -1002,32 +1001,27 @@ class Sets(CommandsTestBase):
         for i in range(1, 5):
             yield r.push('l', 1.0 / i, tail=True)
         a = yield r.sort('l')
-        ex = [Decimal("0.25"), Decimal("0.333333333333"), Decimal("0.5"),
-              Decimal("1.0")]
+        ex = [0.25, 0.333333333333, 0.5, 1.0]
         t(a, ex)
         a = yield r.sort('l', desc=True)
-        ex = [Decimal("1.0"), Decimal("0.5"), Decimal("0.333333333333"),
-              Decimal("0.25")]
+        ex = [1.0, 0.5, 0.333333333333, 0.25]
         t(a, ex)
         a = yield r.sort('l', desc=True, start=2, num=1)
-        ex = [Decimal("0.333333333333")]
+        ex = [0.333333333333]
         t(a, ex)
         a = yield r.set('weight_0.5', 10)
         ex = 'OK'
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*')
-        ex = [Decimal("0.5"), Decimal("1.0"), Decimal("0.333333333333"),
-              Decimal("0.25")]
+        ex = [0.5, 1.0, 0.333333333333, 0.25]
         t(a, ex)
         for i in (yield r.sort('l', desc=True)):
             yield r.set('test_%s' % i, 100 - float(i))
         a = yield r.sort('l', desc=True, get='test_*')
-        ex = [Decimal("99.0"), Decimal("99.5"), Decimal("99.6666666667"),
-              Decimal("99.75")]
+        ex = [99.0, 99.5, 99.6666666667, 99.75]
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*', get='test_*')
-        ex = [Decimal("99.5"), Decimal("99.0"), Decimal("99.6666666667"),
-              Decimal("99.75")]
+        ex = [99.5, 99.0, 99.6666666667, 99.75]
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*', get='missing_*')
         ex = [None, None, None, None]
@@ -1068,10 +1062,28 @@ class Hash(CommandsTestBase):
         t = self.assertEqual
 
         yield r.delete('d')
+
+        a = yield r.hexists('d', 'k')
+        ex = 0
+        t(a, ex)
+
         yield r.hset('d', 'k', 'v')
+
+        a = yield r.hexists('d', 'k')
+        ex = 1
+        t(a, ex)
+
         a = yield r.hget('d', 'k')
         ex = {'k' : 'v' }
         t(a, ex)
+        a = yield r.hset('d', 'new', 'b', preserve=True)
+        ex = 1
+        t(a, ex)
+        a = yield r.hset('d', 'new', 'b', preserve=True)
+        ex = 0
+        t(a, ex)
+        yield r.hdelete('d', 'new')
+
         yield r.hset('d', 'f', 's')
         a = yield r.hgetall('d')
         ex = dict(k='v', f='s')
@@ -1085,6 +1097,26 @@ class Hash(CommandsTestBase):
         ex = None
         t(a, ex)
 
+        a = yield r.hlen('d')
+        ex = 2
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_hincr(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('d')
+        yield r.hset('d', 'k', 0)
+        a = yield r.hincr('d', 'k')
+        ex = 1
+        t(a, ex)
+
+        a = yield r.hincr('d', 'k')
+        ex = 2
+        t(a, ex)
+
+
     @defer.inlineCallbacks
     def test_hmget(self):
         r = self.redis
@@ -1097,6 +1129,7 @@ class Hash(CommandsTestBase):
         a = yield r.hget('d', ['k', 'j'])
         ex = {'k' : 'v', 'j' : 'p'}
         t(a, ex)
+
 
     @defer.inlineCallbacks
     def test_hmset(self):
@@ -1404,3 +1437,68 @@ class PubSub(CommandsTestBase):
         yield s.punsubscribe("channel*", "woot*")
         yield cb
         yield s.punsubscribe()
+
+class SortedSet(CommandsTestBase):
+    """Test commands that operate on sorted sets.
+    """
+    @defer.inlineCallbacks
+    def test_basic(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        a = yield r.zadd('z', 'a', 1)
+        ex = 1
+        t(a, ex)
+        yield r.zadd('z', 'b', 2.142)
+
+        a = yield r.zrank('z', 'a')
+        ex = 0
+        t(a, ex)
+
+        a = yield r.zrank('z', 'a', reverse=True)
+        ex = 1
+        t(a, ex)
+
+        a = yield r.zcard('z')
+        ex = 2
+        t(a, ex)
+
+        a = yield r.zscore('z', 'b')
+        ex = 2.142
+        t(a, ex)
+
+        a = yield r.zrange('z', 0, -1, withscores=True)
+        ex = [('a', 1), ('b', 2.142)]
+        t(a, ex)
+
+        a = yield r.zrem('z', 'a')
+        ex = 1
+        t(a, ex)
+
+
+    @defer.inlineCallbacks
+    def test_zrangebyscore(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        yield r.zadd('z', 'a', 1.014)
+        yield r.zadd('z', 'b', 4.252)
+        yield r.zadd('z', 'c', 0.232)
+        yield r.zadd('z', 'd', 10.425)
+        a = yield r.zrangebyscore('z')
+        ex = ['c', 'a', 'b', 'd']
+        t(a, ex)
+
+        a = yield r.zrangebyscore('z', offset=1, count=2)
+        ex = ['a', 'b']
+        t(a, ex)
+
+        a = yield r.zrangebyscore('z', offset=1, count=2, withscores=True)
+        ex = [('a', 1.014), ('b', 4.252)]
+        t(a, ex)
+
+        a = yield r.zrangebyscore('z', min=1, offset=1, count=2, withscores=True)
+        ex = [('b', 4.252), ('d', 10.425)]
+        t(a, ex)
