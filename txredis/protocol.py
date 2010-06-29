@@ -2,7 +2,7 @@
 @file protocol.py
 
 @author Reza Lotun (rlotun@gmail.com)
-@data 06/22/10
+@date 06/22/10
 Added multi-bulk command sending support.
 Added support for hash commands.
 Added support for sorted set.
@@ -11,8 +11,13 @@ Removed forcing of float data to be decimal.
 Removed inlineCallbacks within protocol code.
 Added setuptools support to setup.py
 
+@author Garret Heaton (powdahound@gmail.com)
+@date 06/15/10
+Added read buffering for bulk data.
+Removed use of LineReceiver to avoid Twisted recursion bug.
+
 @author Dorian Raymer
-@data 02/01/10
+@date 02/01/10
 Added BLPOP/BRPOP and RPOPLPUSH to list commands.
 Added doc strings to list commands (copied from the Redis google code
 project page).
