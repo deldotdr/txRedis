@@ -343,6 +343,15 @@ class Redis(RedisBase):
         self._mb_cmd(command, *list(chain.from_iterable(mapping.iteritems())))
         return self.getResponse()
 
+    def append(self, key, value):
+        self._write('APPEND %s %s\r\n%s\r\n' % (
+                    key, len(value), value))
+        return self.getResponse()
+
+    def substr(self, key, start, end):
+        self._mb_cmd('SUBSTR', key, start, end)
+        return self.getResponse()
+
     def get(self, key):
         """
         """
