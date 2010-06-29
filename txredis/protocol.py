@@ -51,6 +51,7 @@ Command doc strings taken from the CommandReference wiki page.
 
 
 import decimal
+from itertools import chain
 
 from collections import deque
 from twisted.internet import defer, protocol
@@ -312,7 +313,7 @@ class Redis(RedisBase):
         return self.getResponse()
 
     # Commands operating on string values
-    def set(self, key, value, preserve=False, getset=False):
+    def set(self, key, value, preserve=False, getset=False, expire=None):
         """
         """
         # The following will raise an error for unicode values that can't be
@@ -325,8 +326,21 @@ class Redis(RedisBase):
             command = 'SETNX'
         else:
             command = 'SET'
-        value = self._encode(value)
-        self._write('%s %s %s\r\n%s\r\n' % (command, key, len(value), value))
+
+        if expire:
+            self._mb_cmd('SETEX', key, expire, value)
+        else:
+            value = self._encode(value)
+            self._write('%s %s %s\r\n%s\r\n'
+                        % (command, key, len(value), value))
+        return self.getResponse()
+
+    def mset(self, mapping, preserve=False):
+        if preserve:
+            command = 'MSETNX'
+        else:
+            command = 'MSET'
+        self._mb_cmd(command, *list(chain.from_iterable(mapping.iteritems())))
         return self.getResponse()
 
     def get(self, key):
@@ -880,7 +894,7 @@ class Redis(RedisBase):
     # HKEYS
     # HVALS
     # HGETALL
-    def _cmd(self, *args):
+    def _mb_cmd(self, *args):
         # multi-bulk commands
         cmds = []
         for i in args:
@@ -890,31 +904,31 @@ class Redis(RedisBase):
         self._write(cmd)
 
     def hset(self, key, field, value):
-        self._cmd('HSET', key, field, value)
+        self._mb_cmd('HSET', key, field, value)
         return self.getResponse()
 
     def hget(self, key, field):
-        self._cmd('HGET', key, field)
+        self._mb_cmd('HGET', key, field)
         return self.getResponse()
 
     def hincr(self, key, field, amount=1):
-        self._cmd('HINCRBY', key, field, amount)
+        self._mb_cmd('HINCRBY', key, field, amount)
         return self.getResponse()
 
     def hexists(self, key, field):
-        self._cmd('HEXISTS', key, field)
+        self._mb_cmd('HEXISTS', key, field)
         return self.getResponse()
 
     def hdelete(self, key, field):
-        self._cmd('HDEL', key, field)
+        self._mb_cmd('HDEL', key, field)
         return self.getResponse()
 
     def hlen(self, key):
-        self._cmd('HLEN', key)
+        self._mb_cmd('HLEN', key)
         return self.getResponse()
 
     def hgetall(self, key):
-        self._cmd('HGETALL', key)
+        self._mb_cmd('HGETALL', key)
         return self.getResponse()
 
     def publish(self, channel, message):

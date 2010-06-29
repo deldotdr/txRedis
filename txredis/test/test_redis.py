@@ -173,6 +173,31 @@ class General(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_setex(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.set('q', 1, expire=10)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.expire('q', 1)
+        ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_mset(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.mset({'ma' : 1, 'mb' : 2})
+        ex = 'OK'
+        t(a, ex)
+
+        a = yield r.mset({'ma' : 1, 'mb' : 2}, preserve=True)
+        ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_ttl(self):
         r = self.redis
         t = self.assertEqual
