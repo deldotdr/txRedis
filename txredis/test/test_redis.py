@@ -188,11 +188,11 @@ class General(CommandsTestBase):
         r = self.redis
         t = self.assertEqual
 
-        a = yield r.mset({'ma' : 1, 'mb' : 2})
+        a = yield r.mset({'ma': 1, 'mb': 2})
         ex = 'OK'
         t(a, ex)
 
-        a = yield r.mset({'ma' : 1, 'mb' : 2}, preserve=True)
+        a = yield r.mset({'ma': 1, 'mb': 2}, preserve=True)
         ex = 0
         t(a, ex)
 
@@ -206,7 +206,6 @@ class General(CommandsTestBase):
         a = yield r.substr('s', 0, 3)
         ex = 'This'
         t(a, ex)
-
 
     @defer.inlineCallbacks
     def test_append(self):
@@ -222,7 +221,6 @@ class General(CommandsTestBase):
         a = yield r.append('q', addition)
         ex = len(string + addition)
         t(a, ex)
-
 
     @defer.inlineCallbacks
     def test_ttl(self):
@@ -1074,7 +1072,7 @@ class Hash(CommandsTestBase):
         t(a, ex)
 
         a = yield r.hget('d', 'k')
-        ex = {'k' : 'v' }
+        ex = {'k': 'v'}
         t(a, ex)
         a = yield r.hset('d', 'new', 'b', preserve=True)
         ex = 1
@@ -1116,7 +1114,6 @@ class Hash(CommandsTestBase):
         ex = 2
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_hmget(self):
         r = self.redis
@@ -1127,9 +1124,8 @@ class Hash(CommandsTestBase):
         yield r.hset('d', 'k', 'v')
         yield r.hset('d', 'j', 'p')
         a = yield r.hget('d', ['k', 'j'])
-        ex = {'k' : 'v', 'j' : 'p'}
+        ex = {'k': 'v', 'j': 'p'}
         t(a, ex)
-
 
     @defer.inlineCallbacks
     def test_hmset(self):
@@ -1338,26 +1334,32 @@ class PubSub(CommandsTestBase):
     @defer.inlineCallbacks
     def setUp(self):
         yield CommandsTestBase.setUp(self)
+
         class TestSubscriber(RedisSubscriber):
+
             def __init__(self, *args, **kwargs):
                 RedisSubscriber.__init__(self, *args, **kwargs)
                 self.msg_channel = None
                 self.msg_message = None
                 self.msg_received = defer.Deferred()
                 self.channel_subscribed = defer.Deferred()
+
             def messageReceived(self, channel, message):
                 self.msg_channel = channel
                 self.msg_message = message
                 self.msg_received.callback(None)
                 self.msg_received = defer.Deferred()
+
             def channelSubscribed(self, channel, numSubscriptions):
                 self.channel_subscribed.callback(None)
                 self.channel_subscribed = defer.Deferred()
             channelUnsubscribed = channelSubscribed
             channelPatternSubscribed = channelSubscribed
             channelPatternUnsubscribed = channelSubscribed
+
         clientCreator = protocol.ClientCreator(reactor, TestSubscriber)
-        self.subscriber = yield clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
+        self.subscriber = yield clientCreator.connectTCP(REDIS_HOST,
+                                                         REDIS_PORT)
 
     def tearDown(self):
         CommandsTestBase.tearDown(self)
@@ -1438,9 +1440,11 @@ class PubSub(CommandsTestBase):
         yield cb
         yield s.punsubscribe()
 
+
 class SortedSet(CommandsTestBase):
     """Test commands that operate on sorted sets.
     """
+
     @defer.inlineCallbacks
     def test_basic(self):
         r = self.redis
@@ -1476,7 +1480,6 @@ class SortedSet(CommandsTestBase):
         ex = 1
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_zrangebyscore(self):
         r = self.redis
@@ -1499,6 +1502,7 @@ class SortedSet(CommandsTestBase):
         ex = [('a', 1.014), ('b', 4.252)]
         t(a, ex)
 
-        a = yield r.zrangebyscore('z', min=1, offset=1, count=2, withscores=True)
+        a = yield r.zrangebyscore('z', min=1, offset=1, count=2,
+                                  withscores=True)
         ex = [('b', 4.252), ('d', 10.425)]
         t(a, ex)

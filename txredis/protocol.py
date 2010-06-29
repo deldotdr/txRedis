@@ -318,7 +318,6 @@ class Redis(RedisBase):
     # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
     # REDIS COMMANDS
     #
-
     def ping(self):
         """
         Test command. Expect PONG as a reply.
@@ -426,12 +425,14 @@ class Redis(RedisBase):
         """
         """
         self._write('KEYS %s\r\n' % pattern)
+
         def post_process(res):
             if res is not None:
                 res.sort()# XXX is sort ok?
             else:
                 res = []
             return res
+
         return self.getResponse().addCallback(post_process)
 
     def randomkey(self):
@@ -788,10 +789,12 @@ class Redis(RedisBase):
         """
         """
         self._write('SINTER %s\r\n' % ' '.join(args))
+
         def post_process(res):
             if type(res) is list:
                 res = set(res)
             return res
+
         return self.getResponse().addCallback(post_process)
 
     def sinterstore(self, dest, *args):
@@ -804,16 +807,19 @@ class Redis(RedisBase):
         """
         """
         self._write('SMEMBERS %s\r\n' % key)
+
         def post_process(res):
             if type(res) is list:
                 res = set(res)
             return res
+
         return self.getResponse().addCallback(post_process)
 
     def sunion(self, *args):
         """
         """
         self._write('SUNION %s\r\n' % ' '.join(args))
+
         def post_process(res):
             if type(res) is list:
                 res = set(res)
@@ -865,6 +871,7 @@ class Redis(RedisBase):
         """
         """
         self._write('INFO\r\n')
+
         def post_process(res):
             info = dict()
             res = res.split('\r\n')
@@ -874,6 +881,7 @@ class Redis(RedisBase):
                 k, v = l.split(':')
                 info[k] = int(v) if v.isdigit() else v
             return info
+
         return self.getResponse().addCallback(post_process)
 
     def sort(self, key, by=None, get=None, start=None, num=None, desc=False,
@@ -978,6 +986,7 @@ class Redis(RedisBase):
 
     def hgetall(self, key):
         self._mb_cmd('HGETALL', key)
+
         def post_process(key_vals):
             res = {}
             i = 0
@@ -985,6 +994,7 @@ class Redis(RedisBase):
                 res[key_vals[i]] = key_vals[i + 1]
                 i += 2
             return res
+
         return self.getResponse().addCallback(post_process)
 
     def publish(self, channel, message):
@@ -1057,7 +1067,8 @@ class Redis(RedisBase):
         self._mb_cmd('ZSCORE', key, element)
         return self.getResponse()
 
-    def zrangebyscore(self, key, min='-inf', max='+inf', offset=None, count=None, withscores=False):
+    def zrangebyscore(self, key, min='-inf', max='+inf', offset=None,
+                      count=None, withscores=False):
         args = ['ZRANGEBYSCORE', key, min, max]
         if offset and count:
             args.extend(['LIMIT', offset, count])
@@ -1065,6 +1076,7 @@ class Redis(RedisBase):
             args.append('WITHSCORES')
         self._mb_cmd(*args)
         dfr = self.getResponse()
+
         def post_process(vals_and_scores):
             # return list of (val, score) tuples
             res = []
@@ -1074,6 +1086,7 @@ class Redis(RedisBase):
                 res.append((vals_and_scores[i], vals_and_scores[i+1]))
                 i += 2
             return res
+
         if withscores:
             dfr.addCallback(post_process)
         return dfr
