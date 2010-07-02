@@ -252,7 +252,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
             else:
                 element = int(data)
         except ValueError:
-            element = data.decode(self.charset)
+            element = data
+            #element = data.decode(self.charset)
 
         # store bulks we're receiving as part of a multi-bulk response
         if self._multi_bulk_length > 0:

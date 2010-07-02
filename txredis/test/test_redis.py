@@ -122,7 +122,7 @@ class General(CommandsTestBase):
         a = yield r.set('a', 'a')
         ex = 'OK'
         t(a, ex)
-        a = yield isinstance((yield r.randomkey()), unicode)
+        a = yield isinstance((yield r.randomkey()), str)
         ex = True
         t(a, ex)
 
@@ -359,11 +359,12 @@ class Strings(CommandsTestBase):
         a = yield self.redis.set('a', 'pippo')
         self.assertEqual(a, 'OK')
 
-        a = yield self.redis.set('a', u'pippo \u3235')
+        unicode_str = u'pippo \u3235'
+        a = yield self.redis.set('a', unicode_str)
         self.assertEqual(a, 'OK')
 
         a = yield self.redis.get('a')
-        self.assertEqual(a, u'pippo \u3235')
+        self.assertEqual(a, unicode_str.encode('utf8'))
 
         a = yield self.redis.set('b', 105.2)
         self.assertEqual(a, 'OK')
