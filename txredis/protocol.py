@@ -2,8 +2,7 @@
 @file protocol.py
 
 @author Reza Lotun (rlotun@gmail.com)
-@data 06/22/10
-Fix maximum recursion bug that would be set off by large bulk replies.
+@date 06/22/10
 Added multi-bulk command sending support.
 Added support for hash commands.
 Added support for sorted set.
@@ -12,8 +11,13 @@ Removed forcing of float data to be decimal.
 Removed inlineCallbacks within protocol code.
 Added setuptools support to setup.py
 
+@author Garret Heaton (powdahound@gmail.com)
+@date 06/15/10
+Added read buffering for bulk data.
+Removed use of LineReceiver to avoid Twisted recursion bug.
+
 @author Dorian Raymer
-@data 02/01/10
+@date 02/01/10
 Added BLPOP/BRPOP and RPOPLPUSH to list commands.
 Added doc strings to list commands (copied from the Redis google code
 project page).
@@ -61,295 +65,321 @@ Command doc strings taken from the CommandReference wiki page.
 """
 
 
-from itertools import chain, tee, izip
+from collections import deque
+from itertools import chain, izip
 
-from twisted.internet import defer
-from twisted.protocols import basic
+from twisted.internet import defer, protocol
 from twisted.protocols import policies
 
 
-class RedisError(Exception): pass
-class ConnectionError(RedisError): pass
-class ResponseError(RedisError): pass
-class InvalidResponse(RedisError): pass
-class InvalidData(RedisError): pass
+class RedisError(Exception):
+    pass
 
 
-class Redis(basic.LineReceiver, policies.TimeoutMixin):
-    """The main Redis client.
-    """
+class ConnectionError(RedisError):
+    pass
+
+
+class ResponseError(RedisError):
+    pass
+
+
+class InvalidResponse(RedisError):
+    pass
+
+
+class InvalidData(RedisError):
+    pass
+
+
+class RedisBase(protocol.Protocol, policies.TimeoutMixin):
+    """The main Redis client."""
+
     ERROR = "-"
-    STATUS = "+"
+    SINGLE_LINE = "+"
     INTEGER = ":"
     BULK = "$"
     MULTI_BULK = "*"
-    MAX_LENGTH = 99999
-    timeOut = 60
 
     def __init__(self, db=None, charset='utf8', errors='strict'):
         self.charset = charset
-        self.errors = errors
         self.db = db
-        self.bulk_length = 0
-        self.multi_bulk_length = 0
-        self.multi_bulk_reply = []
-        self.replyQueue = defer.DeferredQueue()
+        self.errors = errors
+        self._buffer = ''
+        self._bulk_length = None
+        self._disconnected = False
+        self._multi_bulk_length = None
+        self._multi_bulk_reply = []
+        self._request_queue = deque()
 
-    def lineReceived(self, line):
-        """
-        Reply types:
-          "-" error message
-          "+" single line status reply
-          ":" integer number (protocol level only?)
+    def dataReceived(self, data):
+        """Receive data.
 
-          "$" bulk data
-          "*" multi-bulk data
-        """
-        self.resetTimeout()
-        if len(line) == 0:
-            return
-        token = line[0] # first byte indicates reply type
-        data = line[1:]
-        if token == self.ERROR:
-            self.errorReceived(data)
-        elif token == self.STATUS:
-            self.statusReceived(data)
-        elif token == self.INTEGER:
-            self.integerReceived(data)
-        elif token == self.BULK:
-            try:
-                self.bulk_length = int(data)
-            except ValueError:
-                self.replyReceived(InvalidResponse("Cannot convert data '%s' to integer" % data))
-                return
-            if self.bulk_length == -1:
-                self.bulkDataReceived(None)
-                return
-            else:
-                self.setRawMode()
-        elif token == self.MULTI_BULK:
-            try:
-                self.multi_bulk_length = int(data)
-            except (TypeError, ValueError):
-                self.replyReceived(InvalidResponse("Cannot convert multi-response header '%s' to integer" % data))
-                self.multi_bulk_length = 0
-                return
-            if self.multi_bulk_length == -1:
-                self.multi_bulk_reply = None
-                self.multiBulkDataReceived()
-                return
-            elif self.multi_bulk_length == 0:
-                self.multiBulkDataReceived()
-        else:
-            # if the line we get doesn't match any of the criteria above, simply send
-            # the complete thing to be processed as a raw data string
-            self.setRawMode()
-            self.rawDataReceived(line)
+        Spec: http://code.google.com/p/redis/wiki/ProtocolSpecification
 
+        """
+        self._buffer = self._buffer + data
 
-    def rawDataReceived(self, data):
+        while self._buffer:
+            self.resetTimeout()
+
+            # if we're expecting bulk data, read that many bytes
+            if self._bulk_length is not None:
+                # wait until there's enough data in the buffer
+                if len(self._buffer) < self._bulk_length + 2: # /r/n
+                    return
+                data = self._buffer[:self._bulk_length]
+                self._buffer = self._buffer[self._bulk_length+2:] # 2 for /r/n
+                self.bulkDataReceived(data)
+                continue
+
+            # wait until we have a line
+            if '\r\n' not in self._buffer:
+                return
+
+            # grab a line
+            line, self._buffer = self._buffer.split('\r\n', 1)
+            if len(line) == 0:
+                continue
+
+            # first byte indicates reply type
+            reply_type = line[0]
+            reply_data = line[1:]
+
+            # Error message (-)
+            if reply_type == self.ERROR:
+                self.errorReceived(reply_data)
+            # Integer number (:)
+            elif reply_type == self.INTEGER:
+                self.integerReceived(reply_data)
+            # Single line (+)
+            elif reply_type == self.SINGLE_LINE:
+                self.singleLineReceived(reply_data)
+            # Bulk data (*)
+            elif reply_type == self.BULK:
+                try:
+                    self._bulk_length = int(reply_data)
+                except ValueError:
+                    r = InvalidResponse("Cannot convert data '%s' to integer"
+                                        % reply_data)
+                    self.responseReceived(r)
+                    return
+                # requested value may not exist
+                if self._bulk_length == -1:
+                    self.bulkDataReceived(None)
+            # Multi-bulk data ($)
+            elif reply_type == self.MULTI_BULK:
+                # reply_data will contain the # of bulks we're about to get
+                try:
+                    self._multi_bulk_length = int(reply_data)
+                except ValueError:
+                    r = InvalidResponse("Cannot convert data '%s' to integer"
+                                        % reply_data)
+                    self.responseReceived(r)
+                    return
+                if self._multi_bulk_length == -1:
+                    self._multi_bulk_reply = None
+                    self.multiBulkDataReceived()
+                    return
+                elif self._multi_bulk_length == 0:
+                    self.multiBulkDataReceived()
+
+    def failRequests(self, reason):
+        while self._request_queue:
+            d = self._request_queue.popleft()
+            d.errback(reason)
+
+    def connectionLost(self, reason):
+        """Called when the connection is lost.
+
+        Will fail all pending requests.
+
         """
-        Process and dispatch to bulkDataReceived.
-        @todo buffer raw data in case a bulk piece comes in more than one
-        part
+        self._disconnected = True
+        self.failRequests(reason)
+
+    def timeoutConnection(self):
+        """Called when the connection times out.
+
+        Will fail all pending requests with a TimeoutError.
+
         """
-        # check if we're reading multi-bulk data
-        self.resetTimeout()
-        reply_len = self.bulk_length
-        if self.multi_bulk_length:
-            # consume data as much as possible
-            # NB: This isn't as clean as I'd like, however it's *absolutely essential*
-            # in the case of a large multi-bulk reply. The standard approach of simply
-            # calling self.setLineMode(extra=rest_data), where rest_data can be a very
-            # large string can lead to exceeding maximum recursion depth since self.dataReceived
-            # will call lineReceived which will then change to rawMode forcing the calling
-            # of rawDataReceived etc. etc.
-            raw = True
-            while True:
-                if not data:
-                    break
-                if raw:
-                    if len(data) >= reply_len:
-                        bulk_data = data[:reply_len]
-                        if not bulk_data:
-                            break
-                        data = data[reply_len + 2:]
-                        self.bulkDataReceived(bulk_data)
-                        raw = False
-                    else:
-                        break
-                else:
-                    if data[0] == self.BULK:
-                        # bulk element received
-                        try:
-                            bulk, data = data.split(self.delimiter, 1)
-                        except ValueError:
-                            break
-                        mblen = int(bulk[1:])
-                        self.bulk_length = reply_len = mblen
-                        raw = True
-                    else:
-                        # we don't have enough data
-                        break
-            if data:
-                self.setLineMode(extra=data)
-            else:
-                self.setLineMode()
-        else:
-            bulk_data = data[:reply_len]
-            rest_data = data[reply_len + 2:]
-            self.bulkDataReceived(bulk_data)
-            self.setLineMode(extra=rest_data)
+        self.failRequests(defer.TimeoutError("Connection timeout"))
+        self.transport.loseConnection()
 
     def errorReceived(self, data):
-        """
-        Error from server.
-        """
+        """Error response received."""
         reply = ResponseError(data[4:] if data[:4] == 'ERR ' else data)
-        self.replyReceived(reply)
+        self.responseReceived(reply)
 
-    def statusReceived(self, data):
-        """
-        Single line status should always be a string.
-        """
+    def singleLineReceived(self, data):
+        """Single line response received."""
         if data == 'none':
             reply = None # should this happen here in the client?
         else:
             reply = data
-        self.replyReceived(reply)
+        self.responseReceived(reply)
+
+    def handleMultiBulkElement(self, element):
+        self._multi_bulk_reply.append(element)
+        self._multi_bulk_length = self._multi_bulk_length - 1
+        if self._multi_bulk_length == 0:
+            self.multiBulkDataReceived()
 
     def integerReceived(self, data):
-        """
-        For handling integer replies.
-        """
+        """Integer response received."""
         try:
             reply = int(data)
         except ValueError:
-            reply = InvalidResponse("Cannot convert data '%s' to integer" % data)
-        self.replyReceived(reply)
+            reply = InvalidResponse("Cannot convert data '%s' to integer"
+                                    % data)
+        if self._multi_bulk_length > 0:
+            self.handleMultiBulkElement(reply)
+            return
 
+        self.responseReceived(reply)
 
     def bulkDataReceived(self, data):
-        """
-        Receipt of a bulk data element.
-        """
-        self.bulk_length = 0
-        if data is None:
-            element = data
-        else:
-            try:
-                element = float(data) if '.' in data else int(data)
-            except ValueError:
-                element = data.decode(self.charset)
+        """Bulk data response received."""
+        self._bulk_length = None
 
-        if self.multi_bulk_length > 0:
+        # try to convert to int/float, otherwise treat as string
+        try:
+            if data is None:
+                element = None
+            elif '.' in data:
+                element = float(data)
+            else:
+                element = int(data)
+        except ValueError:
+            element = data
+            #element = data.decode(self.charset)
+
+        # store bulks we're receiving as part of a multi-bulk response
+        if self._multi_bulk_length > 0:
             self.handleMultiBulkElement(element)
             return
-        else:
-            self.replyReceived(element)
 
-    def handleMultiBulkElement(self, element):
-        self.multi_bulk_reply.append(element)
-        self.multi_bulk_length = self.multi_bulk_length - 1
-        if self.multi_bulk_length == 0:
-            self.multiBulkDataReceived()
-
+        self.responseReceived(element)
 
     def multiBulkDataReceived(self):
-        """
-        Receipt of list or set of bulk data elements.
-        """
-        reply = self.multi_bulk_reply
-        self.multi_bulk_reply = []
-        self.multi_bulk_length = 0
-        self.replyReceived(reply)
+        """Multi bulk response received.
 
+        The bulks making up this response have been collected in
+        self._multi_bulk_reply.
 
-    def replyReceived(self, reply):
         """
-        Complete reply received and ready to be pushed to the requesting
-        function.
-        """
-        self.replyQueue.put(reply)
+        reply = self._multi_bulk_reply
+        self._multi_bulk_reply = []
+        self._multi_bulk_length = None
+        self.handleCompleteMultiBulkData(reply)
 
+    def handleCompleteMultiBulkData(self, reply):
+        self.responseReceived(reply)
 
-    def get_response(self):
+    def responseReceived(self, reply):
+        """Push a reply to the waiting request."""
+        if self._request_queue:
+            self._request_queue.popleft().callback(reply)
+
+    def getResponse(self):
         """
         @retval a deferred which will fire with response from server.
         """
-        return self.replyQueue.get()
+        if self._disconnected:
+            return defer.fail(RuntimeError("Not connected"))
+
+        d = defer.Deferred()
+        self._request_queue.append(d)
+        return d
 
     def _encode(self, s):
+        """Encode a value for sending to the server."""
         if isinstance(s, str):
             return s
         if isinstance(s, unicode):
             try:
                 return s.encode(self.charset, self.errors)
             except UnicodeEncodeError, e:
-                raise InvalidData("Error encoding unicode value '%s': %s" % (s.encode(self.charset, 'replace'), e))
+                raise InvalidData("Error encoding unicode value '%s': %s"
+                                  % (s.encode(self.charset, 'replace'), e))
         return str(s)
 
     def _write(self, s):
-        """
-        """
+        """Send data."""
         self.transport.write(s)
 
+    def _mb_cmd(self, *args):
+        """ Issue a multi-bulk command. """
+        cmds = []
+        for i in args:
+            v = self._encode(i)
+            cmds.append('$%s\r\n%s\r\n' % (len(v), v))
+        cmd = '*%s\r\n' % len(args) + ''.join(cmds)
+        self._write(cmd)
+
+
+class Redis(RedisBase):
+    """The main Redis client."""
+
+    def __init__(self, *args, **kwargs):
+        RedisBase.__init__(self, *args, **kwargs)
+
+    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+    # REDIS COMMANDS
+    #
     def ping(self):
         """
         Test command. Expect PONG as a reply.
         """
         self._write('PING\r\n')
-        return self.get_response()
-
-    # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-    # REDIS COMMANDS
-    #
+        return self.getResponse()
 
     # Commands operating on string values
     def set(self, key, value, preserve=False, getset=False, expire=None):
         """
         """
-        # the following will raise an error for unicode values that can't be encoded to ascii
-        # we could probably add an 'encoding' arg to init, but then what do we do with get()?
-        # convert back to unicode? and what about ints, or pickled values?
-        if getset: command = 'GETSET'
-        elif preserve: command = 'SETNX'
-        else: command = 'SET'
+        # The following will raise an error for unicode values that can't be
+        # encoded to ascii. We could probably add an 'encoding' arg to init,
+        # but then what do we do with get()? Convert back to unicode? And what
+        # about ints, or pickled values?
+        if getset:
+            command = 'GETSET'
+        elif preserve:
+            command = 'SETNX'
+        else:
+            command = 'SET'
+
         if expire:
             self._mb_cmd('SETEX', key, expire, value)
-            return self.get_response()
         else:
             value = self._encode(value)
-            cmd = '%s %s %s\r\n%s\r\n' % (
-                    command, key, len(value), value
-                )
-            self._write(cmd)
-            return self.get_response()
+            self._write('%s %s %s\r\n%s\r\n'
+                        % (command, key, len(value), value))
+        return self.getResponse()
 
     def mset(self, mapping, preserve=False):
         if preserve:
             command = 'MSETNX'
         else:
             command = 'MSET'
-        #Python2.5 compliance (no chain.from_iterable) 
-        #self._mb_cmd(command, *list(chain.from_iterable(mapping.iteritems())))
-        self._mb_cmd(command, *list(chain(*mapping.items())))
-        return self.get_response()
+        self._mb_cmd(command, *list(chain(*mapping.iteritems())))
+        return self.getResponse()
 
     def append(self, key, value):
         self._write('APPEND %s %s\r\n%s\r\n' % (
                     key, len(value), value))
-        return self.get_response()
+        return self.getResponse()
 
     def substr(self, key, start, end):
         self._mb_cmd('SUBSTR', key, start, end)
-        return self.get_response()
+        return self.getResponse()
 
     def get(self, key):
         """
         """
         self._write('GET %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def getset(self, key, value):
         """
@@ -360,7 +390,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         """
         self._write('MGET %s\r\n' % ' '.join(args))
-        return self.get_response()
+        return self.getResponse()
 
     def incr(self, key, amount=1):
         """
@@ -369,7 +399,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             self._write('INCR %s\r\n' % key)
         else:
             self._write('INCRBY %s %s\r\n' % (key, amount))
-        return self.get_response()
+        return self.getResponse()
 
     def decr(self, key, amount=1):
         """
@@ -378,25 +408,25 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             self._write('DECR %s\r\n' % key)
         else:
             self._write('DECRBY %s %s\r\n' % (key, amount))
-        return self.get_response()
+        return self.getResponse()
 
     def exists(self, key):
         """
         """
         self._write('EXISTS %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def delete(self, key):
         """
         """
         self._write('DEL %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def get_type(self, key):
         """
         """
         self._write('TYPE %s\r\n' % key)
-        res = self.get_response()
+        res = self.getResponse()
         # return None if res == 'none' else res
         return res
 
@@ -405,48 +435,50 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         """
         """
         self._write('KEYS %s\r\n' % pattern)
+
         def post_process(res):
             if res is not None:
                 res.sort()# XXX is sort ok?
             else:
                 res = []
             return res
-        return self.get_response().addCallback(post_process)
+
+        return self.getResponse().addCallback(post_process)
 
     def randomkey(self):
         """
         """
         #raise NotImplementedError("Implemented but buggy, do not use.")
         self._write('RANDOMKEY\r\n')
-        return self.get_response()
+        return self.getResponse()
 
     def rename(self, src, dst, preserve=False):
         """
         """
         if preserve:
             self._write('RENAMENX %s %s\r\n' % (src, dst))
-            return self.get_response()
+            return self.getResponse()
         else:
             self._write('RENAME %s %s\r\n' % (src, dst))
-            return self.get_response() #.strip()
+            return self.getResponse() #.strip()
 
     def dbsize(self):
         """
         """
         self._write('DBSIZE\r\n')
-        return self.get_response()
+        return self.getResponse()
 
     def expire(self, key, time):
         """
         """
         self._write('EXPIRE %s %s\r\n' % (key, time))
-        return self.get_response()
+        return self.getResponse()
 
     def ttl(self, key):
         """
         """
         self._write('TTL %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     # # # # # # # # #
     # List Commands:
@@ -464,13 +496,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
     # BRPOP
     # RPOPLPUSH
     # SORT
-
     def push(self, key, value, tail=False):
         """
         @param key Redis key
         @param value String element of list
 
-        Add the string value to the head (RPUSH) or tail (LPUSH) of the
+        Add the string value to the head (LPUSH) or tail (RPUSH) of the
         list stored at key key. If the key does not exist an empty list is
         created just before the append operation. If the key exists but is
         not a List an error is returned.
@@ -478,10 +509,9 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(1)
         """
         value = self._encode(value)
-        self._write('%s %s %s\r\n%s\r\n' % (
-            'LPUSH' if tail else 'RPUSH', key, len(value), value
-        ))
-        return self.get_response()
+        self._write('%s %s %s\r\n%s\r\n'
+                    % ('RPUSH' if tail else 'LPUSH', key, len(value), value))
+        return self.getResponse()
 
     def llen(self, key):
         """
@@ -495,7 +525,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(1)
         """
         self._write('LLEN %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def lrange(self, key, start, end):
         """
@@ -519,7 +549,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(n) (with n being the length of the range)
         """
         self._write('LRANGE %s %s %s\r\n' % (key, start, end))
-        return self.get_response()
+        return self.getResponse()
 
     def ltrim(self, key, start, end):
         """
@@ -544,7 +574,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(n) (with n being len of list - len of range)
         """
         self._write('LTRIM %s %s %s\r\n' % (key, start, end))
-        return self.get_response()
+        return self.getResponse()
 
     def lindex(self, key, index):
         """
@@ -563,7 +593,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         the first or the last element of the list is O(1).
         """
         self._write('LINDEX %s %s\r\n' % (key, index))
-        return self.get_response()
+        return self.getResponse()
 
     def pop(self, key, tail=False):
         """
@@ -577,7 +607,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         value 'nil' is returned.
         """
         self._write('%s %s\r\n' % ('RPOP' if tail else 'LPOP', key))
-        return self.get_response()
+        return self.getResponse()
 
     def bpop(self, keys, tail=False, timeout=30):
         """
@@ -632,12 +662,12 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         client values will return false or nil accordingly to the
         programming language used.
         """
-        cmd = '%s ' % ('BRPOP' if tail else 'BLPOP',)
+        cmd = '%s ' % ('BRPOP' if tail else 'BLPOP')
         for key in keys:
             cmd += '%s ' % key
         cmd += '%s\r\n' % str(timeout)
         self._write(cmd)
-        return self.get_response()
+        return self.getResponse()
 
     def rpoplpush(self, srckey, dstkey):
         """
@@ -685,8 +715,8 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
 
         Bulk reply
         """
-        self._write('%s %s %s\r\n' % ('RPOPLPUSH', srckey, dstkey,))
-        return self.get_response()
+        self._write('%s %s %s\r\n' % ('RPOPLPUSH', srckey, dstkey))
+        return self.getResponse()
 
     def lset(self, key, index, value):
         """
@@ -705,10 +735,9 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(N) (with N being the length of the list)
         """
         value = self._encode(value)
-        self._write('LSET %s %s %s\r\n%s\r\n' % (
-            key, index, len(value), value
-        ))
-        return self.get_response()
+        self._write('LSET %s %s %s\r\n%s\r\n'
+                    % (key, index, len(value), value))
+        return self.getResponse()
 
     def lrem(self, key, value, count=0):
         """
@@ -732,108 +761,105 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         @note Time complexity: O(N) (with N being the length of the list)
         """
         value = self._encode(value)
-        self._write('LREM %s %s %s\r\n%s\r\n' % (
-            key, count, len(value), value
-        ))
-        return self.get_response()
+        self._write('LREM %s %s %s\r\n%s\r\n'
+                    % (key, count, len(value), value))
+        return self.getResponse()
 
     # Commands operating on sets
     def sadd(self, key, value):
         """
         """
         value = self._encode(value)
-        cmd = 'SADD %s %s\r\n%s\r\n' % (
-            key, len(value), value
-        )
-        self._write(cmd)
-        return self.get_response()
+        self._write('SADD %s %s\r\n%s\r\n' % (key, len(value), value))
+        return self.getResponse()
 
     def srem(self, key, value):
         """
         """
         value = self._encode(value)
-        self._write('SREM %s %s\r\n%s\r\n' % (
-            key, len(value), value
-        ))
-        return self.get_response()
+        self._write('SREM %s %s\r\n%s\r\n' % (key, len(value), value))
+        return self.getResponse()
 
     def spop(self, key):
         self._write('SPOP %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def scard(self, key):
         self._write('SCARD %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def sismember(self, key, value):
         """
         """
         value = self._encode(value)
-        self._write('SISMEMBER %s %s\r\n%s\r\n' % (
-            key, len(value), value
-        ))
-        return self.get_response()
+        self._write('SISMEMBER %s %s\r\n%s\r\n' % (key, len(value), value))
+        return self.getResponse()
 
     def sinter(self, *args):
         """
         """
         self._write('SINTER %s\r\n' % ' '.join(args))
+
         def post_process(res):
             if type(res) is list:
                 res = set(res)
             return res
-        return self.get_response().addCallback(post_process)
+
+        return self.getResponse().addCallback(post_process)
 
     def sinterstore(self, dest, *args):
         """
         """
         self._write('SINTERSTORE %s %s\r\n' % (dest, ' '.join(args)))
-        return self.get_response()
+        return self.getResponse()
 
     def smembers(self, key):
         """
         """
         self._write('SMEMBERS %s\r\n' % key)
+
         def post_process(res):
             if type(res) is list:
                 res = set(res)
             return res
-        return self.get_response().addCallback(post_process)
+
+        return self.getResponse().addCallback(post_process)
 
     def sunion(self, *args):
         """
         """
         self._write('SUNION %s\r\n' % ' '.join(args))
+
         def post_process(res):
             if type(res) is list:
                 res = set(res)
             return res
-        return self.get_response().addCallback(post_process)
+        return self.getResponse().addCallback(post_process)
 
     def sunionstore(self, dest, *args):
         """
         """
         self._write('SUNIONSTORE %s %s\r\n' % (dest, ' '.join(args)))
-        return self.get_response()
+        return self.getResponse()
 
     # Multiple databases handling commands
     def select(self, db):
         """
         """
         self._write('SELECT %s\r\n' % db)
-        return self.get_response()
+        return self.getResponse()
 
     def move(self, key, db):
         """
         """
         self._write('MOVE %s %s\r\n' % (key, db))
-        return self.get_response()
+        return self.getResponse()
 
     def flush(self, all_dbs=False):
         """
         """
         self._write('%s\r\n' % ('FLUSHALL' if all_dbs else 'FLUSHDB'))
-        return self.get_response()
+        return self.getResponse()
 
     # Persistence control commands
     def save(self, background=False):
@@ -843,13 +869,13 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
             self._write('BGSAVE\r\n')
         else:
             self._write('SAVE\r\n')
-        return self.get_response()
+        return self.getResponse()
 
     def lastsave(self):
         """
         """
         self._write('LASTSAVE\r\n')
-        return self.get_response()
+        return self.getResponse()
 
     def info(self):
         """
@@ -865,10 +891,11 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
                 k, v = l.split(':')
                 info[k] = int(v) if v.isdigit() else v
             return info
-        return self.get_response().addCallback(post_process)
 
+        return self.getResponse().addCallback(post_process)
 
-    def sort(self, key, by=None, get=None, start=None, num=None, desc=False, alpha=False):
+    def sort(self, key, by=None, get=None, start=None, num=None, desc=False,
+             alpha=False):
         """
         """
         stmt = ['SORT', key]
@@ -890,11 +917,11 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         if alpha:
             stmt.append("ALPHA")
         self._write(' '.join(stmt + ["\r\n"]))
-        return self.get_response()
+        return self.getResponse()
 
     def auth(self, passwd):
         self._write('AUTH %s\r\n' % passwd)
-        return self.get_response()
+        return self.getResponse()
 
     # # # # # # # # #
     # Hash Commands:
@@ -908,28 +935,17 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
     # HKEYS
     # HVALS
     # HGETALL
-    def _mb_cmd(self, *args):
-        # multi-bulk commands
-        cmds = []
-        for i in args:
-            v = self._encode(i)
-            cmds.append('$%s\r\n%s\r\n' % (len(v), v))
-        cmd = '*%s\r\n' % len(args) + ''.join(cmds)
-        self._write(cmd)
-
     def hmset(self, key, in_dict):
-        #Python2.5 compliance (no chain.from_iterable) 
-        #fields = list(chain.from_iterable(in_dict.iteritems()))
-        fields = list(chain(*in_dict.items()))
+        fields = list(chain(*in_dict.iteritems()))
         self._mb_cmd('HMSET', *([key] + fields))
-        return self.get_response()
+        return self.getResponse()
 
     def hset(self, key, field, value, preserve=False):
         if preserve:
             self._mb_cmd('HSETNX', key, field, value)
         else:
             self._mb_cmd('HSET', key, field, value)
-        return self.get_response()
+        return self.getResponse()
 
     def hget(self, key, field):
         if isinstance(field, basestring):
@@ -942,35 +958,36 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
                 return values
             return dict(izip(field, values))
 
-        return self.get_response().addCallback(post_process)
+        return self.getResponse().addCallback(post_process)
     hmget = hget
 
     def hkeys(self, key):
         self._mb_cmd('HKEYS', key)
-        return self.get_response()
+        return self.getResponse()
 
     def hvals(self, key):
         self._mb_cmd('HVALS', key)
-        return self.get_response()
+        return self.getResponse()
 
     def hincr(self, key, field, amount=1):
         self._mb_cmd('HINCRBY', key, field, amount)
-        return self.get_response()
+        return self.getResponse()
 
     def hexists(self, key, field):
         self._mb_cmd('HEXISTS', key, field)
-        return self.get_response()
+        return self.getResponse()
 
     def hdelete(self, key, field):
         self._mb_cmd('HDEL', key, field)
-        return self.get_response()
+        return self.getResponse()
 
     def hlen(self, key):
         self._mb_cmd('HLEN', key)
-        return self.get_response()
+        return self.getResponse()
 
     def hgetall(self, key):
         self._mb_cmd('HGETALL', key)
+
         def post_process(key_vals):
             res = {}
             i = 0
@@ -978,7 +995,16 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
                 res[key_vals[i]] = key_vals[i + 1]
                 i += 2
             return res
-        return self.get_response().addCallback(post_process)
+
+        return self.getResponse().addCallback(post_process)
+
+    def publish(self, channel, message):
+        """
+        Publishes a message to all subscribers of a specified channel.
+        """
+        self._write('PUBLISH %s %s\r\n%s\r\n'
+                    % (channel, len(message), message))
+        return self.getResponse()
 
     # # # # # # # # #
     # Sorted Set Commands:
@@ -997,20 +1023,20 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
     # ZUNIONSTORE / ZINTERSTORE
     def zadd(self, key, member, score):
         self._mb_cmd('ZADD', key, score, member)
-        return self.get_response()
+        return self.getResponse()
 
     def zrem(self, key, member):
         self._mb_cmd('ZREM', key, member)
-        return self.get_response()
+        return self.getResponse()
 
     def zincr(self, key, member, incr=1):
         self._mb_cmd('ZINCRBY', key, incr, member)
-        return self.get_response()
+        return self.getResponse()
 
     def zrank(self, key, member, reverse=False):
         cmd = 'ZREVRANK' if reverse else 'ZRANK'
         self._mb_cmd(cmd, key, member)
-        return self.get_response()
+        return self.getResponse()
 
     def zrange(self, key, start, end, withscores=False, reverse=False):
         cmd = 'ZREVRANGE' if reverse else 'ZRANGE'
@@ -1018,7 +1044,7 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
         if withscores:
             args.append('WITHSCORES')
         self._mb_cmd(*args)
-        dfr = self.get_response()
+        dfr = self.getResponse()
 
         def post_process(vals_and_scores):
             # return list of (val, score) tuples
@@ -1036,20 +1062,22 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
 
     def zcard(self, key):
         self._write('ZCARD %s\r\n' % key)
-        return self.get_response()
+        return self.getResponse()
 
     def zscore(self, key, element):
         self._mb_cmd('ZSCORE', key, element)
-        return self.get_response()
+        return self.getResponse()
 
-    def zrangebyscore(self, key, min='-inf', max='+inf', offset=None, count=None, withscores=False):
+    def zrangebyscore(self, key, min='-inf', max='+inf', offset=None,
+                      count=None, withscores=False):
         args = ['ZRANGEBYSCORE', key, min, max]
         if offset and count:
             args.extend(['LIMIT', offset, count])
         if withscores:
             args.append('WITHSCORES')
         self._mb_cmd(*args)
-        dfr = self.get_response()
+        dfr = self.getResponse()
+
         def post_process(vals_and_scores):
             # return list of (val, score) tuples
             res = []
@@ -1059,7 +1087,126 @@ class Redis(basic.LineReceiver, policies.TimeoutMixin):
                 res.append((vals_and_scores[i], vals_and_scores[i+1]))
                 i += 2
             return res
+
         if withscores:
             dfr.addCallback(post_process)
         return dfr
 
+
+class RedisSubscriber(RedisBase):
+    """
+    Redis client for subscribing & listening for published events.  Redis
+    connections listening to events are expected to not issue commands other
+    than subscribe & unsubscribe, and therefore no other commands are available
+    on a RedisSubscriber instance.
+    """
+
+    def __init__(self, *args, **kwargs):
+        RedisBase.__init__(self, *args, **kwargs)
+        self.setTimeout(None)
+
+    def handleCompleteMultiBulkData(self, reply):
+        """
+        Overrides RedisBase.handleCompleteMultiBulkData to intercept published
+        message events.
+        """
+        if reply[0] == u"message":
+            channel, message = reply[1:]
+            self.messageReceived(channel, message)
+        elif reply[0] == u"pmessage":
+            pattern, channel, message = reply[1:]
+            self.messageReceived(channel, message)
+        elif reply[0] == u"subscribe":
+            channel, numSubscribed = reply[1:]
+            self.channelSubscribed(channel, numSubscribed)
+        elif reply[0] == u"unsubscribe":
+            channel, numSubscribed = reply[1:]
+            self.channelUnsubscribed(channel, numSubscribed)
+        elif reply[0] == u"psubscribe":
+            channelPattern, numSubscribed = reply[1:]
+            self.channelPatternSubscribed(channelPattern, numSubscribed)
+        elif reply[0] == u"punsubscribe":
+            channelPattern, numSubscribed = reply[1:]
+            self.channelPatternUnsubscribed(channelPattern, numSubscribed)
+        else:
+            RedisBase.handleCompleteMultiBulkData(self, reply)
+
+    def messageReceived(self, channel, message):
+        """
+        Called when this connection is subscribed to a channel that
+        has received a message published on it.
+        """
+        pass
+
+    def channelSubscribed(self, channel, numSubscriptions):
+        """
+        Called when a channel is subscribed to.
+        """
+        pass
+
+    def channelUnsubscribed(self, channel, numSubscriptions):
+        """
+        Called when a channel is unsubscribed from.
+        """
+        pass
+
+    def channelPatternSubscribed(self, channel, numSubscriptions):
+        """
+        Called when a channel patern is subscribed to.
+        """
+        pass
+
+    def channelPatternUnsubscribed(self, channel, numSubscriptions):
+        """
+        Called when a channel pattern is unsubscribed from.
+        """
+        pass
+
+    def subscribe(self, *channels):
+        """
+        Begin listening for PUBLISH messages on one or more channels.  When a
+        message is published on one, the messageReceived method will be
+        invoked.  Does not return any value, although the method
+        channelSubscribed will be invoked on confirmation from the server of
+        every subscribed channel.  If a channel is already subscribed to by
+        this connection, then channelSubscribed will not be invoked but the
+        channel will continue to be subscribed to.
+        """
+        self._write("SUBSCRIBE %s\r\n" % ' '.join(channels))
+
+    def unsubscribe(self, *channels):
+        """
+        Terminate listening for PUBLISH messages on one or more channels.  If
+        no channels are passed in, all channels are unsubscribed from.i Does
+        not return any value, but the method channelUnsubscribed will be
+        invokved for each channel that is unsubscribed from.  If a channel is
+        provided that is not subscribed to by this connection, then
+        channelUnsubscribed will not be invoked.
+        """
+        if len(channels) == 0:
+            self._write("UNSUBSCRIBE\r\n")
+        else:
+            self._write("UNSUBSCRIBE %s\r\n" % ' '.join(channels))
+
+    def psubscribe(self, *patterns):
+        """
+        Begin listening for PUBLISH messages on one or more channel patterns.
+        When a message is published on a matching channel, the messageReceived
+        method will be invoked.  Does not return any value, but the method
+        channelPatternSubscribed will be invoked for each channel pattern that
+        is subscribed to.
+        """
+        self._write("PSUBSCRIBE %s\r\n" % ' '.join(patterns))
+
+    def punsubscribe(self, *patterns):
+        """
+        Terminate listening for PUBLISH messages on one or more channel
+        patterns.  If no channel patterns are passed in, all channel patterns
+        are unsubscribed from.  Does not return any value, but the method
+        channelPatternUnsubscribed will be invoked for eeach channel pattern
+        that is unsubscribed from.
+        """
+        if len(patterns) == 0:
+            self._write("PUNSUBSCRIBE\r\n")
+        else:
+            self._write("PUNSUBSCRIBE %s\r\n" % ' '.join(patterns))
