@@ -1,16 +1,20 @@
 
 import time
 
+from twisted.internet import error
 from twisted.internet import protocol
 from twisted.internet import reactor
 from twisted.internet import defer
+from twisted.internet.task import Clock
+from twisted.test.proto_helpers import StringTransportWithDisconnection
 from twisted.trial import unittest
 
-from txredis.protocol import Redis
+from txredis.protocol import Redis, RedisSubscriber
 from txredis.protocol import ResponseError
 
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
+
 
 class CommandsTestBase(unittest.TestCase):
 
@@ -21,6 +25,7 @@ class CommandsTestBase(unittest.TestCase):
 
     def tearDown(self):
         self.redis.transport.loseConnection()
+
 
 class General(CommandsTestBase):
     """Test commands that operate on any type of redis value.
@@ -117,8 +122,7 @@ class General(CommandsTestBase):
         a = yield r.set('a', 'a')
         ex = 'OK'
         t(a, ex)
-        random_key = yield r.randomkey()
-        a = yield isinstance(random_key, basestring)
+        a = yield isinstance((yield r.randomkey()), unicode)
         ex = True
         t(a, ex)
 
@@ -184,11 +188,11 @@ class General(CommandsTestBase):
         r = self.redis
         t = self.assertEqual
 
-        a = yield r.mset({'ma' : 1, 'mb' : 2})
+        a = yield r.mset({'ma': 1, 'mb': 2})
         ex = 'OK'
         t(a, ex)
 
-        a = yield r.mset({'ma' : 1, 'mb' : 2}, preserve=True)
+        a = yield r.mset({'ma': 1, 'mb': 2}, preserve=True)
         ex = 0
         t(a, ex)
 
@@ -202,7 +206,6 @@ class General(CommandsTestBase):
         a = yield r.substr('s', 0, 3)
         ex = 'This'
         t(a, ex)
-
 
     @defer.inlineCallbacks
     def test_append(self):
@@ -219,7 +222,6 @@ class General(CommandsTestBase):
         ex = len(string + addition)
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_ttl(self):
         r = self.redis
@@ -234,8 +236,8 @@ class General(CommandsTestBase):
         a = yield r.ttl('a')
         ex = 10
         t(a, ex)
-        a = yield r.expire('a', 1)
-        ex = 0
+        a = yield r.expire('a', 0)
+        ex = 1
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -346,6 +348,13 @@ class Strings(CommandsTestBase):
     """
 
     @defer.inlineCallbacks
+    def test_blank(self):
+        yield self.redis.set('a', "")
+
+        r = yield self.redis.get('a')
+        self.assertEquals("", r)
+
+    @defer.inlineCallbacks
     def test_set(self):
         a = yield self.redis.set('a', 'pippo')
         self.assertEqual(a, 'OK')
@@ -402,7 +411,6 @@ class Strings(CommandsTestBase):
         ex = None
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_getset(self):
         r = self.redis
@@ -434,7 +442,8 @@ class Strings(CommandsTestBase):
         ex = 'OK'
         t(a, ex)
         a = yield r.mget('a', 'b', 'c', 'd')
-        ex = [u'pippo', 15, u'\\r\\naaa\\nbbb\\r\\ncccc\\nddd\\r\\n', u'\\r\\n']
+        ex = [u'pippo', 15,
+              u'\\r\\naaa\\nbbb\\r\\ncccc\\nddd\\r\\n', u'\\r\\n']
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -455,12 +464,10 @@ class Strings(CommandsTestBase):
         ex = 4
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_decr(self):
         r = self.redis
         t = self.assertEqual
-
 
         a = yield r.get('a')
         if a:
@@ -482,6 +489,43 @@ class Lists(CommandsTestBase):
     """
 
     @defer.inlineCallbacks
+    def test_blank_item(self):
+        key = 'test:list'
+        yield self.redis.delete(key)
+
+        chars = ["a", "", "c"]
+        for char in chars:
+            yield self.redis.push(key, char)
+
+        r = yield self.redis.lrange(key, 0, len(chars))
+        self.assertEquals(["c", "", "a"], r)
+
+    @defer.inlineCallbacks
+    def test_concurrent(self):
+        """Test ability to handle many large responses at the same time"""
+        num_lists = 100
+        items_per_list = 50
+
+        # 1. Generate and fill lists
+        lists = []
+        for l in range(0, num_lists):
+            key = 'list-%d' % l
+            yield self.redis.delete(key)
+            for i in range(0, items_per_list):
+                yield self.redis.push(key, 'item-%d' % i)
+            lists.append(key)
+
+        # 2. Make requests to get all lists
+        ds = []
+        for key in lists:
+            d = self.redis.lrange(key, 0, items_per_list)
+            ds.append(d)
+
+        # 3. Wait on all responses and make sure we got them all
+        r = yield defer.DeferredList(ds)
+        self.assertEquals(len(r), num_lists)
+
+    @defer.inlineCallbacks
     def test_push(self):
         r = self.redis
         t = self.assertEqual
@@ -494,7 +538,8 @@ class Lists(CommandsTestBase):
         ex = 'OK'
         t(a, ex)
         a = yield r.push('a', 'a')
-        ex = ResponseError('Operation against a key holding the wrong kind of value')
+        ex = ResponseError('Operation against a key holding the wrong kind '+
+                           'of value')
         t(str(a), str(ex))
 
     @defer.inlineCallbacks
@@ -535,16 +580,16 @@ class Lists(CommandsTestBase):
         ex = 2
         t(a, ex)
         a = yield r.lrange('l', 0, 0)
-        ex = [u'aaa']
+        ex = [u'bbb']
         t(a, ex)
         a = yield r.lrange('l', 0, 1)
-        ex = [u'aaa', u'bbb']
+        ex = [u'bbb', u'aaa']
         t(a, ex)
         a = yield r.lrange('l', -1, 0)
         ex = []
         t(a, ex)
         a = yield r.lrange('l', -1, -1)
-        ex = [u'bbb']
+        ex = [u'aaa']
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -596,10 +641,10 @@ class Lists(CommandsTestBase):
         ex = 2
         t(a, ex)
         a = yield r.lindex('l', 1)
-        ex = u'ccc'
+        ex = u'aaa'
         t(a, ex)
         a = yield r.lindex('l', -1)
-        ex = u'ccc'
+        ex = u'aaa'
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -616,10 +661,10 @@ class Lists(CommandsTestBase):
         ex = 2
         t(a, ex)
         a = yield r.pop('l')
-        ex = u'aaa'
+        ex = u'bbb'
         t(a, ex)
         a = yield r.pop('l')
-        ex = u'bbb'
+        ex = u'aaa'
         t(a, ex)
         yield r.pop('l')
         a = yield r.push('l', 'aaa')
@@ -629,10 +674,10 @@ class Lists(CommandsTestBase):
         ex = 2
         t(a, ex)
         a = yield r.pop('l', tail=True)
-        ex = u'bbb'
+        ex = u'aaa'
         t(a, ex)
         a = yield r.pop('l')
-        ex = u'aaa'
+        ex = u'bbb'
         t(a, ex)
         a = yield r.pop('l')
         ex = None
@@ -697,9 +742,23 @@ class Lists(CommandsTestBase):
         ex = 0
         t(a, ex)
 
+
 class Sets(CommandsTestBase):
     """Test commands that operate on sets.
     """
+
+    @defer.inlineCallbacks
+    def test_blank(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('s')
+        a = yield r.sadd('s', "")
+        ex = 1
+        t(a, ex)
+        a = yield r.smembers('s')
+        ex = set([""])
+        t(a, ex)
 
     @defer.inlineCallbacks
     def test_sadd(self):
@@ -763,7 +822,6 @@ class Sets(CommandsTestBase):
         ex = 1
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_sismember(self):
         r = self.redis
@@ -804,7 +862,8 @@ class Sets(CommandsTestBase):
         ex = ResponseError("wrong number of arguments for 'sinter' command")
         t(str(a), str(ex))
         a = yield r.sinter('l')
-        ex = ResponseError('Operation against a key holding the wrong kind of value')
+        ex = ResponseError('Operation against a key holding the wrong kind '+
+                           'of value')
         t(str(a), str(ex))
         a = yield r.sinter('s1', 's2', 's3')
         ex = set([])
@@ -855,7 +914,8 @@ class Sets(CommandsTestBase):
         ex = 1
         t(a, ex)
         a = yield r.smembers('l')
-        ex = ResponseError('Operation against a key holding the wrong kind of value')
+        ex = ResponseError('Operation against a key holding the wrong kind '+
+                           'of value')
         t(str(a), str(ex))
         a = yield r.smembers('s')
         ex = set([u'a', u'b'])
@@ -912,7 +972,6 @@ class Sets(CommandsTestBase):
         ex = set([u'a', u'b'])
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_sort(self):
         r = self.redis
@@ -938,7 +997,7 @@ class Sets(CommandsTestBase):
         ex = 1
         t(a, ex)
         for i in range(1, 5):
-            yield r.push('l', 1.0 / i)
+            yield r.push('l', 1.0 / i, tail=True)
         a = yield r.sort('l')
         ex = [0.25, 0.333333333333, 0.5, 1.0]
         t(a, ex)
@@ -985,6 +1044,16 @@ class Sets(CommandsTestBase):
 class Hash(CommandsTestBase):
     """Test commands that operate on hashes.
     """
+
+    @defer.inlineCallbacks
+    def test_blank(self):
+        yield self.redis.delete('h')
+        yield self.redis.hset('h', 'blank', "")
+        a = yield self.redis.hget('h', 'blank')
+        self.assertEquals(a, '')
+        a = yield self.redis.hgetall('h')
+        self.assertEquals(a, {'blank': ''})
+
     @defer.inlineCallbacks
     def test_basic(self):
         r = self.redis
@@ -1003,7 +1072,7 @@ class Hash(CommandsTestBase):
         t(a, ex)
 
         a = yield r.hget('d', 'k')
-        ex = {'k' : 'v' }
+        ex = {'k': 'v'}
         t(a, ex)
         a = yield r.hset('d', 'new', 'b', preserve=True)
         ex = 1
@@ -1045,7 +1114,6 @@ class Hash(CommandsTestBase):
         ex = 2
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_hmget(self):
         r = self.redis
@@ -1056,9 +1124,8 @@ class Hash(CommandsTestBase):
         yield r.hset('d', 'k', 'v')
         yield r.hset('d', 'j', 'p')
         a = yield r.hget('d', ['k', 'j'])
-        ex = {'k' : 'v', 'j' : 'p'}
+        ex = {'k': 'v', 'j': 'p'}
         t(a, ex)
-
 
     @defer.inlineCallbacks
     def test_hmset(self):
@@ -1178,5 +1245,341 @@ class SortedSet(CommandsTestBase):
 
         a = yield r.zrangebyscore('z', min=1, offset=1, count=2, withscores=True)
         ex = [('b', 4.252), ('d', 10.425)]
+
+class BlockingListOperartions(CommandsTestBase):
+    """@todo test timeout
+    @todo robustly test async/blocking redis commands
+    """
+
+    @defer.inlineCallbacks
+    def test_bpop_noblock(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('test.list.a')
+        yield r.delete('test.list.b')
+        yield r.push('test.list.a', 'stuff')
+        yield r.push('test.list.a', 'things')
+        yield r.push('test.list.b', 'spam')
+        yield r.push('test.list.b', 'bee')
+        yield r.push('test.list.b', 'honey')
+
+        a = yield r.bpop(['test.list.a', 'test.list.b'])
+        ex = ['test.list.a', 'things']
+        t(a, ex)
+        a = yield r.bpop(['test.list.b', 'test.list.a'])
+        ex = ['test.list.b', 'honey']
+        t(a, ex)
+        a = yield r.bpop(['test.list.a', 'test.list.b'])
+        ex = ['test.list.a', 'stuff']
+        t(a, ex)
+        a = yield r.bpop(['test.list.b', 'test.list.a'])
+        ex = ['test.list.b', 'bee']
+        t(a, ex)
+        a = yield r.bpop(['test.list.a', 'test.list.b'])
+        ex = ['test.list.b', 'spam']
         t(a, ex)
 
+    @defer.inlineCallbacks
+    def test_bpop_block(self):
+        r = self.redis
+        t = self.assertEqual
+
+        clientCreator = protocol.ClientCreator(reactor, Redis)
+        r2 = yield clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
+
+        def _cb(reply, ex):
+            t(reply, ex)
+
+        yield r.delete('test.list.a')
+        yield r.delete('test.list.b')
+
+        d = r.bpop(['test.list.a', 'test.list.b'])
+        ex = ['test.list.a', 'stuff']
+        d.addCallback(_cb, ex)
+
+        info = yield r2.info()
+
+        yield r2.push('test.list.a', 'stuff')
+
+        r2.transport.loseConnection()
+
+
+class Network(unittest.TestCase):
+
+    def setUp(self):
+        self.proto = Redis()
+        self.clock = Clock()
+        self.proto.callLater = self.clock.callLater
+        self.transport = StringTransportWithDisconnection()
+        self.transport.protocol = self.proto
+        self.proto.makeConnection(self.transport)
+
+    def test_request_while_disconnected(self):
+        # fake disconnect
+        self.proto._disconnected = True
+
+        d = self.proto.get('foo')
+        self.assertFailure(d, RuntimeError)
+
+        def checkMessage(error):
+            self.assertEquals(str(error), 'Not connected')
+
+        return d.addCallback(checkMessage)
+
+    def test_disconnect_during_request(self):
+        d1 = self.proto.get("foo")
+        d2 = self.proto.get("bar")
+        self.assertEquals(len(self.proto._request_queue), 2)
+
+        self.transport.loseConnection()
+        done = defer.DeferredList([d1, d2], consumeErrors=True)
+
+        def checkFailures(results):
+            self.assertEquals(len(self.proto._request_queue), 0)
+            for success, result in results:
+                self.assertFalse(success)
+                result.trap(error.ConnectionDone)
+
+        return done.addCallback(checkFailures)
+
+
+class Protocol(unittest.TestCase):
+
+    def setUp(self):
+        self.proto = Redis()
+        self.transport = StringTransportWithDisconnection()
+        self.transport.protocol = self.proto
+        self.proto.makeConnection(self.transport)
+
+    def sendResponse(self, data):
+        self.proto.dataReceived(data)
+
+    @defer.inlineCallbacks
+    def test_error_response(self):
+        # pretending 'foo' is a set, so get is incorrect
+        d = self.proto.get("foo")
+        self.assertEquals(self.transport.value(), "GET foo\r\n")
+        msg = "Operation against a key holding the wrong kind of value"
+        self.sendResponse("-%s\r\n" % msg)
+        r = yield d
+        self.assertEquals(str(r), msg)
+
+    @defer.inlineCallbacks
+    def test_singleline_response(self):
+        d = self.proto.ping()
+        self.assertEquals(self.transport.value(), "PING\r\n")
+        self.sendResponse("+PONG\r\n")
+        r = yield d
+        self.assertEquals(r, 'PONG')
+
+    @defer.inlineCallbacks
+    def test_bulk_response(self):
+        d = self.proto.get("foo")
+        self.assertEquals(self.transport.value(), "GET foo\r\n")
+        self.sendResponse("$3\r\nbar\r\n")
+        r = yield d
+        self.assertEquals(r, 'bar')
+
+    @defer.inlineCallbacks
+    def test_multibulk_response(self):
+        d = self.proto.lrange("foo", 0, 1)
+        self.assertEquals(self.transport.value(), "LRANGE foo 0 1\r\n")
+        self.sendResponse("*2\r\n$3\r\nbar\r\n$6\r\nlolwut\r\n")
+        r = yield d
+        self.assertEquals(r, ['bar', 'lolwut'])
+
+    @defer.inlineCallbacks
+    def test_integer_response(self):
+        d = self.proto.dbsize()
+        self.assertEquals(self.transport.value(), "DBSIZE\r\n")
+        self.sendResponse(":1234\r\n")
+        r = yield d
+        self.assertEquals(r, 1234)
+
+
+class ProtocolBuffering(Protocol):
+
+    def sendResponse(self, data):
+        """Send a response one character at a time to test buffering"""
+        for char in data:
+            self.proto.dataReceived(char)
+
+
+class PubSub(CommandsTestBase):
+
+    @defer.inlineCallbacks
+    def setUp(self):
+        yield CommandsTestBase.setUp(self)
+
+        class TestSubscriber(RedisSubscriber):
+
+            def __init__(self, *args, **kwargs):
+                RedisSubscriber.__init__(self, *args, **kwargs)
+                self.msg_channel = None
+                self.msg_message = None
+                self.msg_received = defer.Deferred()
+                self.channel_subscribed = defer.Deferred()
+
+            def messageReceived(self, channel, message):
+                self.msg_channel = channel
+                self.msg_message = message
+                self.msg_received.callback(None)
+                self.msg_received = defer.Deferred()
+
+            def channelSubscribed(self, channel, numSubscriptions):
+                self.channel_subscribed.callback(None)
+                self.channel_subscribed = defer.Deferred()
+            channelUnsubscribed = channelSubscribed
+            channelPatternSubscribed = channelSubscribed
+            channelPatternUnsubscribed = channelSubscribed
+
+        clientCreator = protocol.ClientCreator(reactor, TestSubscriber)
+        self.subscriber = yield clientCreator.connectTCP(REDIS_HOST,
+                                                         REDIS_PORT)
+
+    def tearDown(self):
+        CommandsTestBase.tearDown(self)
+        self.subscriber.transport.loseConnection()
+
+    @defer.inlineCallbacks
+    def test_subscribe(self):
+        r = self.redis
+        s = self.subscriber
+        t = self.assertEqual
+
+        cb = s.channel_subscribed
+        yield s.subscribe("channelA")
+        yield cb
+
+        cb = s.msg_received
+        a = yield self.redis.publish("channelA", "dataB")
+        ex = 1
+        t(a, ex)
+        yield cb
+        a = s.msg_channel
+        ex = "channelA"
+        t(a, ex)
+        a = s.msg_message
+        ex = "dataB"
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_unsubscribe(self):
+        r = self.redis
+        s = self.subscriber
+        t = self.assertEqual
+
+        cb = s.channel_subscribed
+        yield s.subscribe("channelA", "channelB", "channelC")
+        yield cb
+
+        cb = s.channel_subscribed
+        yield s.unsubscribe("channelA", "channelC")
+        yield cb
+
+        yield s.unsubscribe()
+
+    @defer.inlineCallbacks
+    def test_psubscribe(self):
+        r = self.redis
+        s = self.subscriber
+        t = self.assertEqual
+
+        cb = s.channel_subscribed
+        yield s.psubscribe("channel*", "magic*")
+        yield cb
+
+        cb = s.msg_received
+        a = yield self.redis.publish("channelX", "dataC")
+        ex = 1
+        t(a, ex)
+        yield cb
+        a = s.msg_channel
+        ex = "channelX"
+        t(a, ex)
+        a = s.msg_message
+        ex = "dataC"
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_punsubscribe(self):
+        r = self.redis
+        s = self.subscriber
+        t = self.assertEqual
+
+        cb = s.channel_subscribed
+        yield s.psubscribe("channel*", "magic*", "woot*")
+        yield cb
+
+        cb = s.channel_subscribed
+        yield s.punsubscribe("channel*", "woot*")
+        yield cb
+        yield s.punsubscribe()
+
+
+class SortedSet(CommandsTestBase):
+    """Test commands that operate on sorted sets.
+    """
+
+    @defer.inlineCallbacks
+    def test_basic(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        a = yield r.zadd('z', 'a', 1)
+        ex = 1
+        t(a, ex)
+        yield r.zadd('z', 'b', 2.142)
+
+        a = yield r.zrank('z', 'a')
+        ex = 0
+        t(a, ex)
+
+        a = yield r.zrank('z', 'a', reverse=True)
+        ex = 1
+        t(a, ex)
+
+        a = yield r.zcard('z')
+        ex = 2
+        t(a, ex)
+
+        a = yield r.zscore('z', 'b')
+        ex = 2.142
+        t(a, ex)
+
+        a = yield r.zrange('z', 0, -1, withscores=True)
+        ex = [('a', 1), ('b', 2.142)]
+        t(a, ex)
+
+        a = yield r.zrem('z', 'a')
+        ex = 1
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_zrangebyscore(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        yield r.zadd('z', 'a', 1.014)
+        yield r.zadd('z', 'b', 4.252)
+        yield r.zadd('z', 'c', 0.232)
+        yield r.zadd('z', 'd', 10.425)
+        a = yield r.zrangebyscore('z')
+        ex = ['c', 'a', 'b', 'd']
+        t(a, ex)
+
+        a = yield r.zrangebyscore('z', offset=1, count=2)
+        ex = ['a', 'b']
+        t(a, ex)
+
+        a = yield r.zrangebyscore('z', offset=1, count=2, withscores=True)
+        ex = [('a', 1.014), ('b', 4.252)]
+        t(a, ex)
+
+        a = yield r.zrangebyscore('z', min=1, offset=1, count=2,
+                                  withscores=True)
+        ex = [('b', 4.252), ('d', 10.425)]
+        t(a, ex)
