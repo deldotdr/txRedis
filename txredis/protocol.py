@@ -65,9 +65,9 @@ Command doc strings taken from the CommandReference wiki page.
 """
 
 
-from itertools import chain, tee, izip
-
 from collections import deque
+from itertools import chain, izip
+
 from twisted.internet import defer, protocol
 from twisted.protocols import policies
 
@@ -124,9 +124,9 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
             self.resetTimeout()
 
             # if we're expecting bulk data, read that many bytes
-            if self._bulk_length != None:
+            if self._bulk_length is not None:
                 # wait until there's enough data in the buffer
-                if len(self._buffer) < self._bulk_length:
+                if len(self._buffer) < self._bulk_length + 2: # /r/n
                     return
                 data = self._buffer[:self._bulk_length]
                 self._buffer = self._buffer[self._bulk_length+2:] # 2 for /r/n
@@ -307,6 +307,15 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     def _write(self, s):
         """Send data."""
         self.transport.write(s)
+
+    def _mb_cmd(self, *args):
+        """ Issue a multi-bulk command. """
+        cmds = []
+        for i in args:
+            v = self._encode(i)
+            cmds.append('$%s\r\n%s\r\n' % (len(v), v))
+        cmd = '*%s\r\n' % len(args) + ''.join(cmds)
+        self._write(cmd)
 
 
 class Redis(RedisBase):
@@ -925,15 +934,6 @@ class Redis(RedisBase):
     # HKEYS
     # HVALS
     # HGETALL
-    def _mb_cmd(self, *args):
-        # multi-bulk commands
-        cmds = []
-        for i in args:
-            v = self._encode(i)
-            cmds.append('$%s\r\n%s\r\n' % (len(v), v))
-        cmd = '*%s\r\n' % len(args) + ''.join(cmds)
-        self._write(cmd)
-
     def hmset(self, key, in_dict):
         fields = list(chain(*in_dict.iteritems()))
         self._mb_cmd('HMSET', *([key] + fields))

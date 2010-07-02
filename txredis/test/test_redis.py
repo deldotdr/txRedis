@@ -1176,7 +1176,7 @@ class LargeMultiBulk(CommandsTestBase):
         t = self.assertEqual
 
         yield r.delete('s')
-        data = set(range(1, 10000))
+        data = set(xrange(1, 100000))
         for i in data:
             r.sadd('s', i)
         res = yield r.smembers('s')
@@ -1298,10 +1298,9 @@ class BlockingListOperartions(CommandsTestBase):
         ex = ['test.list.a', 'stuff']
         d.addCallback(_cb, ex)
 
-        info = yield r2.info()
-
         yield r2.push('test.list.a', 'stuff')
 
+        yield d
         r2.transport.loseConnection()
 
 
