@@ -345,6 +345,10 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
 
     def _write(self, s):
         """Send data."""
+        
+        if self.transport == None:
+            raise ConnectionError("Not connected")
+        
         self.transport.write(s)
 
 
