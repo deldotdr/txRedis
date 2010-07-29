@@ -1248,3 +1248,23 @@ class RedisSubscriber(RedisBase):
             self._write("PUNSUBSCRIBE\r\n")
         else:
             self._write("PUNSUBSCRIBE %s\r\n" % ' '.join(patterns))
+
+
+class RedisClientFactory(protocol.ReconnectingClientFactory):
+    """Redis client factory that reconnects/creates a new connection when the old one is lost."""
+    
+    client = None
+    
+    def __init__(self, db=0, auth_passwd=None, max_retries=3, noisy=False):
+        # Set number of times to try reconnecting
+        self.maxRetries = max_retries
+        self.noisy = noisy
+        self.db = db
+        self.passwd = auth_passwd
+    
+    def buildProtocol(self, addr):
+        self.client = Redis(db=self.db, passwd=self.passwd)
+        self.client.factory = self
+        self.resetDelay()
+        
+        return self.client
