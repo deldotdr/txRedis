@@ -68,7 +68,7 @@ Command doc strings taken from the CommandReference wiki page.
 from itertools import chain, tee, izip
 
 from collections import deque
-from twisted.internet import defer, protocol
+from twisted.internet import defer, protocol, task, reactor
 from twisted.protocols import policies
 
 
@@ -101,7 +101,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     BULK = "$"
     MULTI_BULK = "*"
 
-    def __init__(self, db=None, charset='utf8', errors='strict'):
+    def __init__(self, db=None, charset='utf8', errors='strict', passwd=None):
         self.charset = charset
         self.db = db
         self.errors = errors
@@ -111,6 +111,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
         self._multi_bulk_length = None
         self._multi_bulk_reply = []
         self._request_queue = deque()
+        self.passwd = passwd
 
     def dataReceived(self, data):
         """Receive data.
@@ -197,7 +198,45 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
         """
         self._disconnected = True
         self.failRequests(reason)
+    
+    def connectionMade(self):
+        # Authenticate if requested, and select DB
+        if self.passwd:
+            return self.init_auth().addCallback(self.select_db)
+        else:
+            return self.select_db()
 
+    @defer.inlineCallbacks
+    def init_auth(self, *args):
+        while self.transport == None:
+            yield task.deferLater(reactor, 1.0, defer.passthru, None)
+         
+        try:
+            res = yield self.auth(self.passwd)
+        except Exception, e:
+            raise Exception("Unexpected error authenticating with Redis backend: %s" % str(e))
+        if res != "OK":
+            raise Exception("Invalid Redis password supplied for authentication.")
+    
+    @defer.inlineCallbacks
+    def select_db(self, *args):
+        while self.transport == None:
+            yield task.deferLater(reactor, 1.0, defer.passthru, None)
+        
+        try:
+            res = yield self.select(self.db)
+            res = str(res)
+            
+            if res == "operation not permitted":
+                raise Exception("Error selecting DB %s. Redis password required." % self.redis_db)
+            elif res == "invalid DB index":
+                raise Exception("Invalid DB index (%s)." % self.redis_db)
+            elif res != "OK":
+                raise Exception("Unexpected error selecting DB %s." % self.redis_db)
+        except error.ConnectionRefusedError, e:
+            raise Exception("Unexpected connection error selecting Redis DB %s: %s" % (self.redis_db, str(e)))
+        return
+    
     def timeoutConnection(self):
         """Called when the connection times out.
 
