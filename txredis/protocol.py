@@ -996,7 +996,7 @@ class Redis(RedisBase):
             self._mb_cmd('HMGET', *([key] + field))
 
         def post_process(values):
-            if not values:
+            if not values or not isinstance(values, list):
                 return values
             return dict(izip(field, values))
 
