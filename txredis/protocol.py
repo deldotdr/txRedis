@@ -68,7 +68,7 @@ Command doc strings taken from the CommandReference wiki page.
 from itertools import chain, tee, izip
 
 from collections import deque
-from twisted.internet import defer, protocol
+from twisted.internet import defer, protocol, error
 from twisted.protocols import policies
 
 
@@ -233,17 +233,17 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
             if failure.check(DBSelectError):
                 failure.raiseException()
             elif failure.check(error.ConnectionRefusedError):
-                raise Exception("Unexpected connection error selecting Redis DB %s: %s" % (self.redis_db, failure.getErrorMessage()))
+                raise Exception("Unexpected connection error selecting Redis DB %s: %s" % (self.db, failure.getErrorMessage()))
         
         def cb_check_result(result):
             result = str(result)
             
             if result == "operation not permitted":
-                raise DBSelectError("Error selecting DB %s. Redis password required." % self.redis_db)
+                raise DBSelectError("Error selecting DB %s. Redis password required." % self.db)
             elif result =="invalid DB index":
-                raise DBSelectError("Invalid DB index (%s)." % self.redis_db)
+                raise DBSelectError("Invalid DB index (%s)." % self.db)
             elif result != "OK":
-                raise DBSelectError("Unexpected error selecting DB %s." % self.redis_db)
+                raise DBSelectError("Unexpected error selecting DB %s." % self.db)
         
         return self.select(self.db).addCallback(cb_check_result).addErrback(eb_select_error)
     
