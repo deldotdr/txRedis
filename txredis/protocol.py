@@ -68,7 +68,7 @@ Command doc strings taken from the CommandReference wiki page.
 from itertools import chain, tee, izip
 
 from collections import deque
-from twisted.internet import defer, protocol, task, reactor
+from twisted.internet import defer, protocol
 from twisted.protocols import policies
 
 
