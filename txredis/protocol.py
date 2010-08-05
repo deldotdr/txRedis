@@ -91,6 +91,11 @@ class InvalidResponse(RedisError):
 class InvalidData(RedisError):
     pass
 
+class InvalidAuth(RedisError):
+    pass
+
+class DBSelectError(RedisError):
+    pass
 
 class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     """The main Redis client."""
@@ -202,40 +207,45 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     def connectionMade(self):
         # Authenticate if requested, and select DB
         if self.passwd:
-            return self.init_auth().addCallback(self.select_db)
+            return self._init_auth().addCallback(self._select_db)
         else:
-            return self.select_db()
-
-    @defer.inlineCallbacks
-    def init_auth(self, *args):
-        while self.transport == None:
-            yield task.deferLater(reactor, 1.0, defer.passthru, None)
-         
-        try:
-            res = yield self.auth(self.passwd)
-        except Exception, e:
-            raise Exception("Unexpected error authenticating with Redis backend: %s" % str(e))
-        if res != "OK":
-            raise Exception("Invalid Redis password supplied for authentication.")
+            return self._select_db()
     
-    @defer.inlineCallbacks
-    def select_db(self, *args):
-        while self.transport == None:
-            yield task.deferLater(reactor, 1.0, defer.passthru, None)
+    
+    def _init_auth(self, *args):
         
-        try:
-            res = yield self.select(self.db)
-            res = str(res)
+        def eb_auth_error(failure):
+            if failure.check(InvalidAuth):
+                failure.raiseException()
+            else:
+                raise Exception("Unexpected error authenticating with Redis backend: %s" % failure.getErrorMessage())
+        
+        def cb_check_result(result):
+            if result != "OK":
+                raise InvalidAuth("Invalid Redis password supplied for authentication.")
+         
+        
+        return self.auth(self.passwd).addCallback(cb_check_result).addErrback(eb_auth_error)
+    
+    def _select_db(self, *args):
+        
+        def eb_select_error(failure):
+            if failure.check(DBSelectError):
+                failure.raiseException()
+            elif failure.check(error.ConnectionRefusedError):
+                raise Exception("Unexpected connection error selecting Redis DB %s: %s" % (self.redis_db, failure.getErrorMessage()))
+        
+        def cb_check_result(result):
+            result = str(result)
             
-            if res == "operation not permitted":
-                raise Exception("Error selecting DB %s. Redis password required." % self.redis_db)
-            elif res == "invalid DB index":
-                raise Exception("Invalid DB index (%s)." % self.redis_db)
-            elif res != "OK":
-                raise Exception("Unexpected error selecting DB %s." % self.redis_db)
-        except error.ConnectionRefusedError, e:
-            raise Exception("Unexpected connection error selecting Redis DB %s: %s" % (self.redis_db, str(e)))
-        return
+            if result == "operation not permitted":
+                raise DBSelectError("Error selecting DB %s. Redis password required." % self.redis_db)
+            elif result =="invalid DB index":
+                raise DBSelectError("Invalid DB index (%s)." % self.redis_db)
+            elif result != "OK":
+                raise DBSelectError("Unexpected error selecting DB %s." % self.redis_db)
+        
+        return self.select(self.db).addCallback(cb_check_result).addErrback(eb_select_error)
     
     def timeoutConnection(self):
         """Called when the connection times out.
