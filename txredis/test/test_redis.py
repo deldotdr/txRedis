@@ -342,6 +342,43 @@ class General(CommandsTestBase):
         ex = True
         t(a, ex)
 
+    @defer.inlineCallbacks
+    def test_multi(self):
+        r = yield self.redis.multi()
+        self.assertEqual(r, 'OK')
+
+    @defer.inlineCallbacks
+    def test_execute(self):
+        # exec without multi will return ResponseError
+        r = yield self.redis.execute()
+        self.assertEqual(str(r), 'EXEC without MULTI')
+
+        # multi with two sets
+        yield self.redis.multi()
+        r = yield self.redis.set('foo', 'bar')
+        self.assertEqual(r, 'QUEUED')
+        r = yield self.redis.set('foo', 'barbar')
+        self.assertEqual(r, 'QUEUED')
+        r = yield self.redis.execute()
+        self.assertEqual(r, ['OK', 'OK'])
+        r = yield self.redis.get('foo')
+        self.assertEqual(r, 'barbar')
+
+    @defer.inlineCallbacks
+    def test_discard(self):
+        # discard without multi will return ResponseError
+        r = yield self.redis.execute()
+        self.assertEqual(str(r), 'EXEC without MULTI')
+
+        # multi with two sets
+        yield self.redis.set('foo', 'bar1')
+        yield self.redis.multi()
+        r = yield self.redis.set('foo', 'bar2')
+        r = yield self.redis.discard()
+        self.assertEqual(r, 'OK')
+        r = yield self.redis.get('foo')
+        self.assertEqual(r, 'bar1')
+
 
 class Strings(CommandsTestBase):
     """Test commands that operate on string values.
@@ -1182,6 +1219,7 @@ class LargeMultiBulk(CommandsTestBase):
             r.sadd('s', i)
         res = yield r.smembers('s')
         t(res, data)
+
 
 class SortedSet(CommandsTestBase):
     """Test commands that operate on sorted sets.

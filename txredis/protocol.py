@@ -15,6 +15,7 @@ Added setuptools support to setup.py
 @date 06/15/10
 Added read buffering for bulk data.
 Removed use of LineReceiver to avoid Twisted recursion bug.
+Added support for multi, exec, and discard
 
 @author Dorian Raymer
 @date 02/01/10
@@ -155,7 +156,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
             # Single line (+)
             elif reply_type == self.SINGLE_LINE:
                 self.singleLineReceived(reply_data)
-            # Bulk data (*)
+            # Bulk data (&)
             elif reply_type == self.BULK:
                 try:
                     self._bulk_length = int(reply_data)
@@ -167,7 +168,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
                 # requested value may not exist
                 if self._bulk_length == -1:
                     self.bulkDataReceived(None)
-            # Multi-bulk data ($)
+            # Multi-bulk data (*)
             elif reply_type == self.MULTI_BULK:
                 # reply_data will contain the # of bulks we're about to get
                 try:
@@ -218,6 +219,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
             reply = None # should this happen here in the client?
         else:
             reply = data
+
         self.responseReceived(reply)
 
     def handleMultiBulkElement(self, element):
@@ -255,11 +257,6 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
             element = data
             #element = data.decode(self.charset)
 
-        # store bulks we're receiving as part of a multi-bulk response
-        if self._multi_bulk_length > 0:
-            self.handleMultiBulkElement(element)
-            return
-
         self.responseReceived(element)
 
     def multiBulkDataReceived(self):
@@ -278,8 +275,15 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
         self.responseReceived(reply)
 
     def responseReceived(self, reply):
-        """Push a reply to the waiting request."""
-        if self._request_queue:
+        """Handle a server response.
+
+        If we're waiting for multibulk elements, store this reply. Otherwise
+        provide the reply to the waiting request.
+
+        """
+        if self._multi_bulk_length > 0:
+            self.handleMultiBulkElement(reply)
+        elif self._request_queue:
             self._request_queue.popleft().callback(reply)
 
     def getResponse(self):
@@ -478,6 +482,23 @@ class Redis(RedisBase):
         """
         """
         self._write('TTL %s\r\n' % key)
+        return self.getResponse()
+
+    def multi(self):
+        self._write('MULTI\r\n')
+        return self.getResponse()
+
+    def execute(self):
+        """Sends the EXEC command
+
+        Called execute because exec is a reserved word in Python.
+
+        """
+        self._write('EXEC\r\n')
+        return self.getResponse()
+
+    def discard(self):
+        self._write('DISCARD\r\n')
         return self.getResponse()
 
     # # # # # # # # #
