@@ -193,6 +193,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
 
     def connectionMade(self):
         """ Called when incoming connections is made to the server. """
+        self._disconnected = False
         if self.password:
             return self.auth(self.password)
 
@@ -1259,4 +1260,30 @@ class RedisSubscriber(RedisBase):
             self._write("PUNSUBSCRIBE\r\n")
         else:
             self._write("PUNSUBSCRIBE %s\r\n" % ' '.join(patterns))
+
+
+class RedisClientFactory(protocol.ReconnectingClientFactory):
+    protocol = Redis
+
+    def __init__(self, *args, **kwargs):
+        self.noisy = True
+        self._args = args
+        self._kwargs = kwargs
+        self.client = None
+        self.deferred = defer.Deferred()
+
+    def buildProtocol(self, addr):
+        from twisted.internet import reactor
+        def fire(res):
+            self.deferred.callback(self.client)
+            self.deferred = defer.Deferred()
+        self.client = self.protocol(*self._args, **self._kwargs)
+        self.client.factory = self
+        reactor.callLater(0, fire, self.client)
+        self.resetDelay()
+        return self.client
+
+
+class RedisSubscriberFactory(RedisClientFactory):
+    protocol = RedisSubscriber
 

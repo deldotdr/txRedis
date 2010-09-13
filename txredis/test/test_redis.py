@@ -5,11 +5,11 @@ from twisted.internet import error
 from twisted.internet import protocol
 from twisted.internet import reactor
 from twisted.internet import defer
-from twisted.internet.task import Clock
+from twisted.internet.task import Clock, deferLater
 from twisted.test.proto_helpers import StringTransportWithDisconnection
 from twisted.trial import unittest
 
-from txredis.protocol import Redis, RedisSubscriber
+from txredis.protocol import Redis, RedisSubscriber, RedisClientFactory
 from txredis.protocol import ResponseError
 
 REDIS_HOST = 'localhost'
@@ -1472,6 +1472,32 @@ class Protocol(unittest.TestCase):
         self.sendResponse(":1234\r\n")
         r = yield d
         self.assertEquals(r, 1234)
+
+
+class TestFactory(unittest.TestCase):
+    @defer.inlineCallbacks
+    def setUp(self):
+        self.factory = RedisClientFactory()
+        reactor.connectTCP(REDIS_HOST, REDIS_PORT, self.factory)
+        yield self.factory.deferred
+
+    def tearDown(self):
+        self.factory.stopTrying()
+        self.factory.client.transport.loseConnection()
+
+    @defer.inlineCallbacks
+    def test_reconnect(self):
+        a = yield self.factory.client.info()
+        self.assertTrue('uptime_in_days' in a)
+
+        # teardown the connection
+        self.factory.client.transport.loseConnection()
+
+        # wait until reconnected
+        a = yield self.factory.deferred
+
+        a = yield self.factory.client.info()
+        self.assertTrue('uptime_in_days' in a)
 
 
 class ProtocolBuffering(Protocol):
