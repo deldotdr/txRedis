@@ -30,11 +30,49 @@ class CommandsTestBase(unittest.TestCase):
 class General(CommandsTestBase):
     """Test commands that operate on any type of redis value.
     """
-
     @defer.inlineCallbacks
     def test_ping(self):
         a = yield self.redis.ping()
         self.assertEqual(a, 'PONG')
+
+    @defer.inlineCallbacks
+    def test_config(self):
+        r = self.redis
+        t = self.assertEqual
+        a = yield self.redis.get_config('*')
+        self.assertTrue(isinstance(a, dict))
+        self.assertTrue('dbfilename' in a)
+
+        a = yield self.redis.set_config('dbfilename', 'dump.rdb.tmp')
+        ex = 'OK'
+        t(a, ex)
+
+        a = yield self.redis.get_config('dbfilename')
+        self.assertTrue(isinstance(a, dict))
+        t(a['dbfilename'], 'dump.rdb.tmp')
+
+    """
+    @defer.inlineCallbacks
+    def test_auth(self):
+        r = self.redis
+        t = self.assertEqual
+
+        # set a password
+        password = 'foobar'
+        a = yield self.redis.set_config('requirepass', password)
+        ex = 'OK'
+        t(a, ex)
+
+        # auth with it
+        a = yield self.redis.auth(password)
+        ex = 'OK'
+        t(a, ex)
+
+        # turn password off
+        a = yield self.redis.set_config('requirepass', '')
+        ex = 'OK'
+        t(a, ex)
+    """
 
     @defer.inlineCallbacks
     def test_exists(self):

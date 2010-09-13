@@ -102,9 +102,10 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     BULK = "$"
     MULTI_BULK = "*"
 
-    def __init__(self, db=None, charset='utf8', errors='strict'):
+    def __init__(self, db=None, password=None, charset='utf8', errors='strict'):
         self.charset = charset
         self.db = db
+        self.password = password
         self.errors = errors
         self._buffer = ''
         self._bulk_length = None
@@ -189,6 +190,11 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
         while self._request_queue:
             d = self._request_queue.popleft()
             d.errback(reason)
+
+    def connectionMade(self):
+        """ Called when incoming connections is made to the server. """
+        if self.password:
+            return self.auth(self.password)
 
     def connectionLost(self, reason):
         """Called when the connection is lost.
@@ -337,6 +343,28 @@ class Redis(RedisBase):
         Test command. Expect PONG as a reply.
         """
         self._write('PING\r\n')
+        return self.getResponse()
+
+    def get_config(self, pattern):
+        """
+        Get configuration for Redis at runtime.
+        """
+        self._mb_cmd('CONFIG', 'GET', pattern)
+        def post_process(values):
+            # transform into dict
+            res = {}
+            if not values:
+                return res
+            for i in xrange(0, len(values) - 1, 2):
+                res[values[i]] = values[i + 1]
+            return res
+        return self.getResponse().addCallback(post_process)
+
+    def set_config(self, parameter, value):
+        """
+        Set configuration at runtime.
+        """
+        self._mb_cmd('CONFIG', 'SET', parameter, value)
         return self.getResponse()
 
     # Commands operating on string values
@@ -1231,3 +1259,4 @@ class RedisSubscriber(RedisBase):
             self._write("PUNSUBSCRIBE\r\n")
         else:
             self._write("PUNSUBSCRIBE %s\r\n" % ' '.join(patterns))
+
