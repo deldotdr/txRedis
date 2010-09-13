@@ -1088,6 +1088,10 @@ class Redis(RedisBase):
         self._mb_cmd(cmd, key, member)
         return self.getResponse()
 
+    def zcount(self, key, min, max):
+        self._mb_cmd('ZCOUNT', key, min, max)
+        return self.getResponse()
+
     def zrange(self, key, start, end, withscores=False, reverse=False):
         cmd = 'ZREVRANGE' if reverse else 'ZRANGE'
         args = [cmd, key, start, end]

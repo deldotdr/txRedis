@@ -1660,6 +1660,20 @@ class SortedSet(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_zcount(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        yield r.zadd('z', 'a', 1)
+        yield r.zadd('z', 'b', 2)
+        yield r.zadd('z', 'c', 3)
+        yield r.zadd('z', 'd', 4)
+        a = yield r.zcount('z', 1, 3)
+        ex = 3
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_zrangebyscore(self):
         r = self.redis
         t = self.assertEqual
