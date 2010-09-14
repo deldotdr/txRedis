@@ -1348,6 +1348,43 @@ class SortedSet(CommandsTestBase):
 
 
     @defer.inlineCallbacks
+    def test_zcount(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        yield r.zadd('z', 'a', 1)
+        yield r.zadd('z', 'b', 2)
+        yield r.zadd('z', 'c', 3)
+        yield r.zadd('z', 'd', 4)
+        a = yield r.zcount('z', 1, 3)
+        ex = 3
+        t(a, ex)
+
+
+    @defer.inlineCallbacks
+    def test_zremrange(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        yield r.zadd('z', 'a', 1.0)
+        yield r.zadd('z', 'b', 2.0)
+        yield r.zadd('z', 'c', 3.0)
+        yield r.zadd('z', 'd', 4.0)
+
+        a = yield r.zremrangebyscore('z', 1.0, 3.0)
+        ex = 3
+        t(a, ex)
+
+        yield r.zadd('z', 'a', 1.0)
+        yield r.zadd('z', 'b', 2.0)
+        yield r.zadd('z', 'c', 3.0)
+        a = yield r.zremrangebyrank('z', 0, 2)
+        ex = 3
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_zrangebyscore(self):
         r = self.redis
         t = self.assertEqual
@@ -1371,6 +1408,7 @@ class SortedSet(CommandsTestBase):
 
         a = yield r.zrangebyscore('z', min=1, offset=1, count=2, withscores=True)
         ex = [('b', 4.252), ('d', 10.425)]
+
 
 class BlockingListOperartions(CommandsTestBase):
     """@todo test timeout
@@ -1668,83 +1706,3 @@ class PubSub(CommandsTestBase):
         yield cb
         yield s.punsubscribe()
 
-
-class SortedSet(CommandsTestBase):
-    """Test commands that operate on sorted sets.
-    """
-
-    @defer.inlineCallbacks
-    def test_basic(self):
-        r = self.redis
-        t = self.assertEqual
-
-        yield r.delete('z')
-        a = yield r.zadd('z', 'a', 1)
-        ex = 1
-        t(a, ex)
-        yield r.zadd('z', 'b', 2.142)
-
-        a = yield r.zrank('z', 'a')
-        ex = 0
-        t(a, ex)
-
-        a = yield r.zrank('z', 'a', reverse=True)
-        ex = 1
-        t(a, ex)
-
-        a = yield r.zcard('z')
-        ex = 2
-        t(a, ex)
-
-        a = yield r.zscore('z', 'b')
-        ex = 2.142
-        t(a, ex)
-
-        a = yield r.zrange('z', 0, -1, withscores=True)
-        ex = [('a', 1), ('b', 2.142)]
-        t(a, ex)
-
-        a = yield r.zrem('z', 'a')
-        ex = 1
-        t(a, ex)
-
-    @defer.inlineCallbacks
-    def test_zcount(self):
-        r = self.redis
-        t = self.assertEqual
-
-        yield r.delete('z')
-        yield r.zadd('z', 'a', 1)
-        yield r.zadd('z', 'b', 2)
-        yield r.zadd('z', 'c', 3)
-        yield r.zadd('z', 'd', 4)
-        a = yield r.zcount('z', 1, 3)
-        ex = 3
-        t(a, ex)
-
-    @defer.inlineCallbacks
-    def test_zrangebyscore(self):
-        r = self.redis
-        t = self.assertEqual
-
-        yield r.delete('z')
-        yield r.zadd('z', 'a', 1.014)
-        yield r.zadd('z', 'b', 4.252)
-        yield r.zadd('z', 'c', 0.232)
-        yield r.zadd('z', 'd', 10.425)
-        a = yield r.zrangebyscore('z')
-        ex = ['c', 'a', 'b', 'd']
-        t(a, ex)
-
-        a = yield r.zrangebyscore('z', offset=1, count=2)
-        ex = ['a', 'b']
-        t(a, ex)
-
-        a = yield r.zrangebyscore('z', offset=1, count=2, withscores=True)
-        ex = [('a', 1.014), ('b', 4.252)]
-        t(a, ex)
-
-        a = yield r.zrangebyscore('z', min=1, offset=1, count=2,
-                                  withscores=True)
-        ex = [('b', 4.252), ('d', 10.425)]
-        t(a, ex)

@@ -1096,6 +1096,14 @@ class Redis(RedisBase):
         self._mb_cmd('ZREM', key, member)
         return self.getResponse()
 
+    def zremrangebyrank(self, key, start, end):
+        self._mb_cmd('ZREMRANGEBYRANK', key, start, end)
+        return self.getResponse()
+
+    def zremrangebyscore(self, key, min, max):
+        self._mb_cmd('ZREMRANGEBYSCORE', key, min, max)
+        return self.getResponse()
+
     def zincr(self, key, member, incr=1):
         self._mb_cmd('ZINCRBY', key, incr, member)
         return self.getResponse()
