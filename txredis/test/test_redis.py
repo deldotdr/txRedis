@@ -1409,6 +1409,53 @@ class SortedSet(CommandsTestBase):
         a = yield r.zrangebyscore('z', min=1, offset=1, count=2, withscores=True)
         ex = [('b', 4.252), ('d', 10.425)]
 
+    @defer.inlineCallbacks
+    def test_zaggregatestore(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('a')
+        yield r.delete('b')
+        yield r.delete('t')
+
+        yield r.zadd('a', 'a', 1.0)
+        yield r.zadd('a', 'b', 2.0)
+        yield r.zadd('a', 'c', 3.0)
+        yield r.zadd('b', 'a', 1.0)
+        yield r.zadd('b', 'b', 2.0)
+        yield r.zadd('b', 'c', 3.0)
+
+        a = yield r.zunionstore('t', ['a', 'b'])
+        ex = 3
+        t(a, ex)
+
+        a = yield r.zscore('t', 'a')
+        ex = 2
+        t(a, ex)
+
+        yield r.delete('t')
+        a = yield r.zunionstore('t', {'a' : 2.0, 'b' : 2.0})
+        ex = 3
+        t(a, ex)
+
+        a = yield r.zscore('t', 'a')
+        ex = 4
+        t(a, ex)
+
+        yield r.delete('t')
+        a = yield r.zunionstore('t', {'a' : 2.0, 'b' : 2.0}, aggregate='MAX')
+        ex = 3
+        t(a, ex)
+
+        a = yield r.zscore('t', 'a')
+        ex = 2
+        t(a, ex)
+
+        yield r.delete('t')
+        a = yield r.zinterstore('t', {'a' : 2.0, 'b' : 2.0}, aggregate='MAX')
+        ex = 3
+        t(a, ex)
+
 
 class BlockingListOperartions(CommandsTestBase):
     """@todo test timeout

@@ -1104,6 +1104,41 @@ class Redis(RedisBase):
         self._mb_cmd('ZREMRANGEBYSCORE', key, min, max)
         return self.getResponse()
 
+    def _zopstore(self, op, dstkey, keys, aggregate=None):
+        """ Creates a union or intersection of N sorted sets given by keys k1
+        through kN, and stores it at dstkey. It is mandatory to provide the
+        number of input keys N, before passing the input keys and the other
+        (optional) arguments.
+        """
+        # basic arguments
+        args = [op, dstkey, len(keys)]
+        # add in key names, and optionally weights
+        if isinstance(keys, dict):
+            args.extend(list(keys.iterkeys()))
+            args.append('WEIGHTS')
+            args.extend(list(keys.itervalues()))
+        else:
+            args.extend(keys)
+        if aggregate:
+            args.append('AGGREGATE')
+            args.append(aggregate)
+        self._mb_cmd(*args)
+        return self.getResponse()
+
+    def zunionstore(self, dstkey, keys, aggregate=None):
+        """ Creates a union of N sorted sets at dstkey. keys can be a list
+        of keys or dict of keys mapping to weights. aggregate can be
+        one of SUM, MIN or MAX.
+        """
+        return self._zopstore('ZUNIONSTORE', dstkey, keys, aggregate)
+
+    def zinterstore(self, dstkey, keys, aggregate=None):
+        """ Creates an intersection of N sorted sets at dstkey. keys can be a list
+        of keys or dict of keys mapping to weights. aggregate can be
+        one of SUM, MIN or MAX.
+        """
+        return self._zopstore('ZINTERSTORE', dstkey, keys, aggregate)
+
     def zincr(self, key, member, incr=1):
         self._mb_cmd('ZINCRBY', key, incr, member)
         return self.getResponse()
