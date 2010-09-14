@@ -872,6 +872,17 @@ class Sets(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_srandmember(self):
+        r = self.redis
+
+        yield r.delete('s')
+        yield r.sadd('s', 'a')
+        yield r.sadd('s', 'b')
+        yield r.sadd('s', 'c')
+        a = yield r.srandmember('s')
+        self.assertTrue(a in set(['a', 'b', 'c']))
+
+    @defer.inlineCallbacks
     def test_smove(self):
         r = self.redis
         t = self.assertEqual

@@ -853,6 +853,10 @@ class Redis(RedisBase):
         self._mb_cmd('SDIFFSTORE', dstkey, *args)
         return self.getResponse()
 
+    def srandmember(self, key):
+        self._mb_cmd('SRANDMEMBER', key)
+        return self.getResponse()
+
     def sinter(self, *args):
         """
         """
