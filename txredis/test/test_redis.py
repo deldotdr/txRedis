@@ -850,6 +850,22 @@ class Sets(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_smove(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('s')
+        yield r.delete('t')
+        yield r.sadd('s', 'a')
+        yield r.sadd('t', 'b')
+        a = yield r.smove('s', 't', 'a')
+        ex = 1
+        t(a, ex)
+        a = yield r.scard('s')
+        ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_srem(self):
         r = self.redis
         t = self.assertEqual

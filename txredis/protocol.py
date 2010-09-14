@@ -875,6 +875,11 @@ class Redis(RedisBase):
 
         return self.getResponse().addCallback(post_process)
 
+    def smove(self, srckey, dstkey, member):
+        """ Move the specifided member from the set at srckey to the set at dstkey. """
+        self._mb_cmd('SMOVE', srckey, dstkey, member)
+        return self.getResponse()
+
     def sunion(self, *args):
         """
         """
