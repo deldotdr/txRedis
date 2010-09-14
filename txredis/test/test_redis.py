@@ -863,6 +863,13 @@ class Sets(CommandsTestBase):
         ex = ['b']
         t(a, ex)
 
+        a = yield r.sdiffstore('c', 's', 't')
+        ex = 1
+        t(a, ex)
+
+        a = yield r.scard('c')
+        ex = 1
+        t(a, ex)
 
     @defer.inlineCallbacks
     def test_smove(self):

@@ -849,6 +849,10 @@ class Redis(RedisBase):
         self._mb_cmd('SDIFF', *args)
         return self.getResponse()
 
+    def sdiffstore(self, dstkey, *args):
+        self._mb_cmd('SDIFFSTORE', dstkey, *args)
+        return self.getResponse()
+
     def sinter(self, *args):
         """
         """
