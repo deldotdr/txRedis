@@ -850,6 +850,21 @@ class Sets(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_sdiff(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('s')
+        yield r.delete('t')
+        yield r.sadd('s', 'a')
+        yield r.sadd('s', 'b')
+        yield r.sadd('t', 'a')
+        a = yield r.sdiff('s', 't')
+        ex = ['b']
+        t(a, ex)
+
+
+    @defer.inlineCallbacks
     def test_smove(self):
         r = self.redis
         t = self.assertEqual

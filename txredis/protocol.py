@@ -845,6 +845,10 @@ class Redis(RedisBase):
         self._write('SISMEMBER %s %s\r\n%s\r\n' % (key, len(value), value))
         return self.getResponse()
 
+    def sdiff(self, *args):
+        self._mb_cmd('SDIFF', *args)
+        return self.getResponse()
+
     def sinter(self, *args):
         """
         """
