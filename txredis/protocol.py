@@ -1174,6 +1174,9 @@ class Redis(RedisBase):
             dfr.addCallback(post_process)
         return dfr
 
+    def zrevrange(self, key, start, end, withscores=False):
+        return self.zrange(key, start, end, withscores, reverse=True)
+
     def zcard(self, key):
         self._write('ZCARD %s\r\n' % key)
         return self.getResponse()
