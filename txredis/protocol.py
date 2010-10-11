@@ -291,7 +291,10 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
         if self._multi_bulk_length > 0:
             self.handleMultiBulkElement(reply)
         elif self._request_queue:
-            self._request_queue.popleft().callback(reply)
+            if isinstance(reply, ResponseError):
+                self._request_queue.popleft().errback(reply)
+            else:
+                self._request_queue.popleft().callback(reply)
 
     def getResponse(self):
         """
