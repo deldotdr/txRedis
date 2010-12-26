@@ -1023,6 +1023,8 @@ class Redis(RedisBase):
         def post_process(values):
             if not values:
                 return values
+            if isinstance(field, basestring):
+                return {field: values}
             return dict(izip(field, values))
 
         return self.getResponse().addCallback(post_process)
