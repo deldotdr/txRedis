@@ -1269,16 +1269,22 @@ class RedisClientFactory(protocol.ReconnectingClientFactory):
     
     client = None
     
-    def __init__(self, db=0, auth_passwd=None, max_retries=3, noisy=False):
+    def __init__(self, db=0, auth_passwd=None, max_retries=3, noisy=False, deferred=None, reactor=None):
         # Set number of times to try reconnecting
         self.maxRetries = max_retries
         self.noisy = noisy
         self.db = db
         self.passwd = auth_passwd
+        self.deferred = deferred
+        self.reactor = reactor
     
     def buildProtocol(self, addr):
         self.client = Redis(db=self.db, passwd=self.passwd)
         self.client.factory = self
         self.resetDelay()
+        
+        if self.reactor and self.deferred:
+            self.reactor.callLater(0, self.deferred.callback, self.client)
+            self.deferred = None
         
         return self.client
