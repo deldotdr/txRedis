@@ -92,6 +92,8 @@ class InvalidResponse(RedisError):
 class InvalidData(RedisError):
     pass
 
+class DBSelectError(RedisError):
+    pass
 
 class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     """The main Redis client."""
@@ -105,6 +107,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     def __init__(self, db=None, password=None, charset='utf8', errors='strict'):
         self.charset = charset
         self.db = db
+        self.db_selected = False
         self.password = password
         self.errors = errors
         self._buffer = ''
@@ -190,12 +193,32 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
         while self._request_queue:
             d = self._request_queue.popleft()
             d.errback(reason)
+    
+    
+    def _select_db(self, *args):
+        
+        def cb_check_result(result):
+            result = str(result)
+            if result == "operation not permitted":
+                raise DBSelectError("Error selecting DB %s. Redis password required." % self.redis_db)
+            elif result =="invalid DB index":
+                raise DBSelectError("Invalid DB index (%s)." % self.redis_db)
+            elif result != "OK":
+                raise DBSelectError("Unexpected error selecting DB %s." % self.redis_db)
+            self.db_selected = True
+            return result
+        
+        if self.db:
+            return self.select(self.db).addCallback(cb_check_result)
+        else:
+            self.db_selected = True
+            return
 
     def connectionMade(self):
         """ Called when incoming connections is made to the server. """
         self._disconnected = False
-        if self.password:
-            return self.auth(self.password)
+        
+        return self.auth(self.password).addCallback(self._select_db)
 
     def connectionLost(self, reason):
         """Called when the connection is lost.
