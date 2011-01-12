@@ -1,3 +1,4 @@
 include *.txt
+include *.rst
 recursive-include txredis *.py
 recursive-include examples *.py

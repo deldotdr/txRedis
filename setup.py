@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 sdict = {
     'name' : 'txredis',
-    'version' : '0.1.3',
+    'version' : '2.0',
 	'packages' : ['txredis'],
     'description' : 'Python/Twisted client for Redis key-value store',
     'author' : 'Dorian Raymer',
