@@ -316,19 +316,14 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
                                   % (s.encode(self.charset, 'replace'), e))
         return str(s)
 
-    def _write(self, s):
-        """Send data."""
-        self.transport.write(s)
-
-    def _mb_cmd(self, *args):
-        """ Issue a multi-bulk command. """
+    def _send(self, *args):
+        """Encode and send a request using the 'unified request protocol' (aka multi-bulk)"""
         cmds = []
         for i in args:
             v = self._encode(i)
             cmds.append('$%s\r\n%s\r\n' % (len(v), v))
         cmd = '*%s\r\n' % len(args) + ''.join(cmds)
-        self._write(cmd)
-
+        self.transport.write(cmd)
 
 class Redis(RedisBase):
     """The main Redis client."""
@@ -343,14 +338,14 @@ class Redis(RedisBase):
         """
         Test command. Expect PONG as a reply.
         """
-        self._write('PING\r\n')
+        self._send('PING')
         return self.getResponse()
 
     def get_config(self, pattern):
         """
         Get configuration for Redis at runtime.
         """
-        self._mb_cmd('CONFIG', 'GET', pattern)
+        self._send('CONFIG', 'GET', pattern)
         def post_process(values):
             # transform into dict
             res = {}
@@ -365,7 +360,7 @@ class Redis(RedisBase):
         """
         Set configuration at runtime.
         """
-        self._mb_cmd('CONFIG', 'SET', parameter, value)
+        self._send('CONFIG', 'SET', parameter, value)
         return self.getResponse()
 
     # Commands operating on string values
@@ -384,11 +379,9 @@ class Redis(RedisBase):
             command = 'SET'
 
         if expire:
-            self._mb_cmd('SETEX', key, expire, value)
+            self._send('SETEX', key, expire, value)
         else:
-            value = self._encode(value)
-            self._write('%s %s %s\r\n%s\r\n'
-                        % (command, key, len(value), value))
+            self._send(command, key, value)
         return self.getResponse()
 
     def mset(self, mapping, preserve=False):
@@ -396,22 +389,21 @@ class Redis(RedisBase):
             command = 'MSETNX'
         else:
             command = 'MSET'
-        self._mb_cmd(command, *list(chain(*mapping.iteritems())))
+        self._send(command, *list(chain(*mapping.iteritems())))
         return self.getResponse()
 
     def append(self, key, value):
-        self._write('APPEND %s %s\r\n%s\r\n' % (
-                    key, len(value), value))
+        self._send('APPEND', key, value)
         return self.getResponse()
 
     def substr(self, key, start, end):
-        self._mb_cmd('SUBSTR', key, start, end)
+        self._send('SUBSTR', key, start, end)
         return self.getResponse()
 
     def get(self, key):
         """
         """
-        self._write('GET %s\r\n' % key)
+        self._send('GET', key)
         return self.getResponse()
 
     def getset(self, key, value):
@@ -422,43 +414,43 @@ class Redis(RedisBase):
     def mget(self, *args):
         """
         """
-        self._write('MGET %s\r\n' % ' '.join(args))
+        self._send('MGET', *args)
         return self.getResponse()
 
     def incr(self, key, amount=1):
         """
         """
         if amount == 1:
-            self._write('INCR %s\r\n' % key)
+            self._send('INCR', key)
         else:
-            self._write('INCRBY %s %s\r\n' % (key, amount))
+            self._send('INCRBY', key, amount)
         return self.getResponse()
 
     def decr(self, key, amount=1):
         """
         """
         if amount == 1:
-            self._write('DECR %s\r\n' % key)
+            self._send('DECR', key)
         else:
-            self._write('DECRBY %s %s\r\n' % (key, amount))
+            self._send('DECRBY', key, amount)
         return self.getResponse()
 
     def exists(self, key):
         """
         """
-        self._write('EXISTS %s\r\n' % key)
+        self._send('EXISTS', key)
         return self.getResponse()
 
     def delete(self, key):
         """
         """
-        self._write('DEL %s\r\n' % key)
+        self._send('DEL', key)
         return self.getResponse()
 
     def get_type(self, key):
         """
         """
-        self._write('TYPE %s\r\n' % key)
+        self._send('TYPE', key)
         res = self.getResponse()
         # return None if res == 'none' else res
         return res
@@ -467,7 +459,7 @@ class Redis(RedisBase):
     def keys(self, pattern):
         """
         """
-        self._write('KEYS %s\r\n' % pattern)
+        self._send('KEYS', pattern)
 
         def post_process(res):
             if res is not None:
@@ -482,39 +474,35 @@ class Redis(RedisBase):
         """
         """
         #raise NotImplementedError("Implemented but buggy, do not use.")
-        self._write('RANDOMKEY\r\n')
+        self._send('RANDOMKEY')
         return self.getResponse()
 
     def rename(self, src, dst, preserve=False):
         """
         """
-        if preserve:
-            self._write('RENAMENX %s %s\r\n' % (src, dst))
-            return self.getResponse()
-        else:
-            self._write('RENAME %s %s\r\n' % (src, dst))
-            return self.getResponse() #.strip()
+        self._send('RENAMENX' if preserve else 'RENAME', src, dst)
+        return self.getResponse() #.strip()
 
     def dbsize(self):
         """
         """
-        self._write('DBSIZE\r\n')
+        self._send('DBSIZE')
         return self.getResponse()
 
     def expire(self, key, time):
         """
         """
-        self._write('EXPIRE %s %s\r\n' % (key, time))
+        self._send('EXPIRE', key, time)
         return self.getResponse()
 
     def ttl(self, key):
         """
         """
-        self._write('TTL %s\r\n' % key)
+        self._send('TTL', key)
         return self.getResponse()
 
     def multi(self):
-        self._write('MULTI\r\n')
+        self._send('MULTI')
         return self.getResponse()
 
     def execute(self):
@@ -523,11 +511,11 @@ class Redis(RedisBase):
         Called execute because exec is a reserved word in Python.
 
         """
-        self._write('EXEC\r\n')
+        self._send('EXEC')
         return self.getResponse()
 
     def discard(self):
-        self._write('DISCARD\r\n')
+        self._send('DISCARD')
         return self.getResponse()
 
     # # # # # # # # #
@@ -558,9 +546,7 @@ class Redis(RedisBase):
 
         @note Time complexity: O(1)
         """
-        value = self._encode(value)
-        self._write('%s %s %s\r\n%s\r\n'
-                    % ('RPUSH' if tail else 'LPUSH', key, len(value), value))
+        self._send('RPUSH' if tail else 'LPUSH', key, value)
         return self.getResponse()
 
     def llen(self, key):
@@ -574,7 +560,7 @@ class Redis(RedisBase):
 
         @note Time complexity: O(1)
         """
-        self._write('LLEN %s\r\n' % key)
+        self._send('LLEN', key)
         return self.getResponse()
 
     def lrange(self, key, start, end):
@@ -598,7 +584,7 @@ class Redis(RedisBase):
 
         @note Time complexity: O(n) (with n being the length of the range)
         """
-        self._write('LRANGE %s %s %s\r\n' % (key, start, end))
+        self._send('LRANGE', key, start, end)
         return self.getResponse()
 
     def ltrim(self, key, start, end):
@@ -623,7 +609,7 @@ class Redis(RedisBase):
 
         @note Time complexity: O(n) (with n being len of list - len of range)
         """
-        self._write('LTRIM %s %s %s\r\n' % (key, start, end))
+        self._send('LTRIM', key, start, end)
         return self.getResponse()
 
     def lindex(self, key, index):
@@ -642,7 +628,7 @@ class Redis(RedisBase):
         Note that even if the average time complexity is O(n) asking for
         the first or the last element of the list is O(1).
         """
-        self._write('LINDEX %s %s\r\n' % (key, index))
+        self._send('LINDEX', key, index)
         return self.getResponse()
 
     def pop(self, key, tail=False):
@@ -656,7 +642,7 @@ class Redis(RedisBase):
         If the key does not exist or the list is already empty the special
         value 'nil' is returned.
         """
-        self._write('%s %s\r\n' % ('RPOP' if tail else 'LPOP', key))
+        self._send('RPOP' if tail else 'LPOP', key)
         return self.getResponse()
 
     def bpop(self, keys, tail=False, timeout=30):
@@ -712,11 +698,7 @@ class Redis(RedisBase):
         client values will return false or nil accordingly to the
         programming language used.
         """
-        cmd = '%s ' % ('BRPOP' if tail else 'BLPOP')
-        for key in keys:
-            cmd += '%s ' % key
-        cmd += '%s\r\n' % str(timeout)
-        self._write(cmd)
+        self._send('BRPOP' if tail else 'BLPOP', *(list(keys) + [str(timeout)]))
         return self.getResponse()
 
     def rpoplpush(self, srckey, dstkey):
@@ -765,7 +747,7 @@ class Redis(RedisBase):
 
         Bulk reply
         """
-        self._write('%s %s %s\r\n' % ('RPOPLPUSH', srckey, dstkey))
+        self._send('RPOPLPUSH', srckey, dstkey)
         return self.getResponse()
 
     def lset(self, key, index, value):
@@ -784,9 +766,7 @@ class Redis(RedisBase):
 
         @note Time complexity: O(N) (with N being the length of the list)
         """
-        value = self._encode(value)
-        self._write('LSET %s %s %s\r\n%s\r\n'
-                    % (key, index, len(value), value))
+        self._send('LSET', key, index, value)
         return self.getResponse()
 
     def lrem(self, key, value, count=0):
@@ -810,122 +790,105 @@ class Redis(RedisBase):
 
         @note Time complexity: O(N) (with N being the length of the list)
         """
-        value = self._encode(value)
-        self._write('LREM %s %s %s\r\n%s\r\n'
-                    % (key, count, len(value), value))
+        self._send('LREM', key, count, value)
         return self.getResponse()
 
     # Commands operating on sets
+    def _list_to_set(self, res):
+        if type(res) is list:
+            return set(res)
+        return res
+
     def sadd(self, key, value):
         """
         """
-        value = self._encode(value)
-        self._write('SADD %s %s\r\n%s\r\n' % (key, len(value), value))
+        self._send('SADD', key, value)
         return self.getResponse()
 
     def srem(self, key, value):
         """
         """
-        value = self._encode(value)
-        self._write('SREM %s %s\r\n%s\r\n' % (key, len(value), value))
+        self._send('SREM', key, value)
         return self.getResponse()
 
     def spop(self, key):
-        self._write('SPOP %s\r\n' % key)
+        self._send('SPOP', key)
         return self.getResponse()
 
     def scard(self, key):
-        self._write('SCARD %s\r\n' % key)
+        self._send('SCARD', key)
         return self.getResponse()
 
     def sismember(self, key, value):
         """
         """
-        value = self._encode(value)
-        self._write('SISMEMBER %s %s\r\n%s\r\n' % (key, len(value), value))
+        self._send('SISMEMBER', key, value)
         return self.getResponse()
 
     def sdiff(self, *args):
-        self._mb_cmd('SDIFF', *args)
+        self._send('SDIFF', *args)
         return self.getResponse()
 
     def sdiffstore(self, dstkey, *args):
-        self._mb_cmd('SDIFFSTORE', dstkey, *args)
+        self._send('SDIFFSTORE', dstkey, *args)
         return self.getResponse()
 
     def srandmember(self, key):
-        self._mb_cmd('SRANDMEMBER', key)
+        self._send('SRANDMEMBER', key)
         return self.getResponse()
 
     def sinter(self, *args):
         """
         """
-        self._write('SINTER %s\r\n' % ' '.join(args))
-
-        def post_process(res):
-            if type(res) is list:
-                res = set(res)
-            return res
-
-        return self.getResponse().addCallback(post_process)
+        self._send('SINTER', *args)
+        return self.getResponse().addCallback(self._list_to_set)
 
     def sinterstore(self, dest, *args):
         """
         """
-        self._write('SINTERSTORE %s %s\r\n' % (dest, ' '.join(args)))
+        self._send('SINTERSTORE', dest, *args)
         return self.getResponse()
 
     def smembers(self, key):
         """
         """
-        self._write('SMEMBERS %s\r\n' % key)
-
-        def post_process(res):
-            if type(res) is list:
-                res = set(res)
-            return res
-
-        return self.getResponse().addCallback(post_process)
+        self._send('SMEMBERS', key)
+        return self.getResponse().addCallback(self._list_to_set)
 
     def smove(self, srckey, dstkey, member):
         """ Move the specifided member from the set at srckey to the set at dstkey. """
-        self._mb_cmd('SMOVE', srckey, dstkey, member)
+        self._send('SMOVE', srckey, dstkey, member)
         return self.getResponse()
 
     def sunion(self, *args):
         """
         """
-        self._write('SUNION %s\r\n' % ' '.join(args))
-
-        def post_process(res):
-            if type(res) is list:
-                res = set(res)
-            return res
-        return self.getResponse().addCallback(post_process)
+        self._send('SUNION', *args)
+        return self.getResponse().addCallback(self._list_to_set)
 
     def sunionstore(self, dest, *args):
         """
         """
-        self._write('SUNIONSTORE %s %s\r\n' % (dest, ' '.join(args)))
+        self._send('SUNIONSTORE', dest, *args)
         return self.getResponse()
 
     # Multiple databases handling commands
     def select(self, db):
         """
         """
-        self._write('SELECT %s\r\n' % db)
+        self._send('SELECT', db)
         return self.getResponse()
 
     def move(self, key, db):
         """
         """
-        self._write('MOVE %s %s\r\n' % (key, db))
+        self._send('MOVE', key, db)
         return self.getResponse()
 
     def flush(self, all_dbs=False):
         """
         """
-        self._write('%s\r\n' % ('FLUSHALL' if all_dbs else 'FLUSHDB'))
+        self._send('FLUSHALL' if all_dbs else 'FLUSHDB')
         return self.getResponse()
 
     # Persistence control commands
@@ -933,21 +896,21 @@ class Redis(RedisBase):
         """
         """
         if background:
-            self._write('BGSAVE\r\n')
+            self._send('BGSAVE')
         else:
-            self._write('SAVE\r\n')
+            self._send('SAVE')
         return self.getResponse()
 
     def lastsave(self):
         """
         """
-        self._write('LASTSAVE\r\n')
+        self._send('LASTSAVE')
         return self.getResponse()
 
     def info(self):
         """
         """
-        self._write('INFO\r\n')
+        self._send('INFO')
 
         def post_process(res):
             info = dict()
@@ -967,27 +930,27 @@ class Redis(RedisBase):
         """
         stmt = ['SORT', key]
         if by:
-            stmt.append("BY %s" % by)
+            stmt.extend(['BY', by])
         if start and num:
-            stmt.append("LIMIT %s %s" % (start, num))
+            stmt.extend(['LIMIT', start, num])
         if get is None:
             pass
         elif isinstance(get, basestring):
-            stmt.append("GET %s" % get)
+            stmt.extend(['GET', get])
         elif isinstance(get, list) or isinstance(get, tuple):
             for g in get:
-                stmt.append("GET %s" % g)
+                stmt.extend(['GET', get])
         else:
             raise RedisError("Invalid parameter 'get' for Redis sort")
         if desc:
             stmt.append("DESC")
         if alpha:
             stmt.append("ALPHA")
-        self._write(' '.join(stmt + ["\r\n"]))
+        self._send(*stmt)
         return self.getResponse()
 
     def auth(self, passwd):
-        self._write('AUTH %s\r\n' % passwd)
+        self._send('AUTH', passwd)
         return self.getResponse()
 
     # # # # # # # # #
@@ -1004,21 +967,21 @@ class Redis(RedisBase):
     # HGETALL
     def hmset(self, key, in_dict):
         fields = list(chain(*in_dict.iteritems()))
-        self._mb_cmd('HMSET', *([key] + fields))
+        self._send('HMSET', key, *fields)
         return self.getResponse()
 
     def hset(self, key, field, value, preserve=False):
         if preserve:
-            self._mb_cmd('HSETNX', key, field, value)
+            self._send('HSETNX', key, field, value)
         else:
-            self._mb_cmd('HSET', key, field, value)
+            self._send('HSET', key, field, value)
         return self.getResponse()
 
     def hget(self, key, field):
         if isinstance(field, basestring):
-            self._mb_cmd('HGET', key, field)
+            self._send('HGET', key, field)
         else:
-            self._mb_cmd('HMGET', *([key] + field))
+            self._send('HMGET', *([key] + field))
 
         def post_process(values):
             if not values:
@@ -1029,31 +992,31 @@ class Redis(RedisBase):
     hmget = hget
 
     def hkeys(self, key):
-        self._mb_cmd('HKEYS', key)
+        self._send('HKEYS', key)
         return self.getResponse()
 
     def hvals(self, key):
-        self._mb_cmd('HVALS', key)
+        self._send('HVALS', key)
         return self.getResponse()
 
     def hincr(self, key, field, amount=1):
-        self._mb_cmd('HINCRBY', key, field, amount)
+        self._send('HINCRBY', key, field, amount)
         return self.getResponse()
 
     def hexists(self, key, field):
-        self._mb_cmd('HEXISTS', key, field)
+        self._send('HEXISTS', key, field)
         return self.getResponse()
 
     def hdelete(self, key, field):
-        self._mb_cmd('HDEL', key, field)
+        self._send('HDEL', key, field)
         return self.getResponse()
 
     def hlen(self, key):
-        self._mb_cmd('HLEN', key)
+        self._send('HLEN', key)
         return self.getResponse()
 
     def hgetall(self, key):
-        self._mb_cmd('HGETALL', key)
+        self._send('HGETALL', key)
 
         def post_process(key_vals):
             res = {}
@@ -1069,8 +1032,7 @@ class Redis(RedisBase):
         """
         Publishes a message to all subscribers of a specified channel.
         """
-        self._write('PUBLISH %s %s\r\n%s\r\n'
-                    % (channel, len(message), message))
+        self._send('PUBLISH', channel, message)
         return self.getResponse()
 
     # # # # # # # # #
@@ -1089,19 +1051,19 @@ class Redis(RedisBase):
     # ZREMRANGEBYSCORE
     # ZUNIONSTORE / ZINTERSTORE
     def zadd(self, key, member, score):
-        self._mb_cmd('ZADD', key, score, member)
+        self._send('ZADD', key, score, member)
         return self.getResponse()
 
     def zrem(self, key, member):
-        self._mb_cmd('ZREM', key, member)
+        self._send('ZREM', key, member)
         return self.getResponse()
 
     def zremrangebyrank(self, key, start, end):
-        self._mb_cmd('ZREMRANGEBYRANK', key, start, end)
+        self._send('ZREMRANGEBYRANK', key, start, end)
         return self.getResponse()
 
     def zremrangebyscore(self, key, min, max):
-        self._mb_cmd('ZREMRANGEBYSCORE', key, min, max)
+        self._send('ZREMRANGEBYSCORE', key, min, max)
         return self.getResponse()
 
     def _zopstore(self, op, dstkey, keys, aggregate=None):
@@ -1122,7 +1084,7 @@ class Redis(RedisBase):
         if aggregate:
             args.append('AGGREGATE')
             args.append(aggregate)
-        self._mb_cmd(*args)
+        self._send(*args)
         return self.getResponse()
 
     def zunionstore(self, dstkey, keys, aggregate=None):
@@ -1140,16 +1102,16 @@ class Redis(RedisBase):
         return self._zopstore('ZINTERSTORE', dstkey, keys, aggregate)
 
     def zincr(self, key, member, incr=1):
-        self._mb_cmd('ZINCRBY', key, incr, member)
+        self._send('ZINCRBY', key, incr, member)
         return self.getResponse()
 
     def zrank(self, key, member, reverse=False):
         cmd = 'ZREVRANK' if reverse else 'ZRANK'
-        self._mb_cmd(cmd, key, member)
+        self._send(cmd, key, member)
         return self.getResponse()
 
     def zcount(self, key, min, max):
-        self._mb_cmd('ZCOUNT', key, min, max)
+        self._send('ZCOUNT', key, min, max)
         return self.getResponse()
 
     def zrange(self, key, start, end, withscores=False, reverse=False):
@@ -1157,7 +1119,7 @@ class Redis(RedisBase):
         args = [cmd, key, start, end]
         if withscores:
             args.append('WITHSCORES')
-        self._mb_cmd(*args)
+        self._send(*args)
         dfr = self.getResponse()
 
         def post_process(vals_and_scores):
@@ -1178,11 +1140,11 @@ class Redis(RedisBase):
         return self.zrange(key, start, end, withscores, reverse=True)
 
     def zcard(self, key):
-        self._write('ZCARD %s\r\n' % key)
+        self._send('ZCARD', key)
         return self.getResponse()
 
     def zscore(self, key, element):
-        self._mb_cmd('ZSCORE', key, element)
+        self._send('ZSCORE', key, element)
         return self.getResponse()
 
     def zrangebyscore(self, key, min='-inf', max='+inf', offset=None,
@@ -1192,7 +1154,7 @@ class Redis(RedisBase):
             args.extend(['LIMIT', offset, count])
         if withscores:
             args.append('WITHSCORES')
-        self._mb_cmd(*args)
+        self._send(*args)
         dfr = self.getResponse()
 
         def post_process(vals_and_scores):
@@ -1289,7 +1251,7 @@ class RedisSubscriber(RedisBase):
         this connection, then channelSubscribed will not be invoked but the
         channel will continue to be subscribed to.
         """
-        self._write("SUBSCRIBE %s\r\n" % ' '.join(channels))
+        self._send('SUBSCRIBE', *channels)
 
     def unsubscribe(self, *channels):
         """
@@ -1300,10 +1262,7 @@ class RedisSubscriber(RedisBase):
         provided that is not subscribed to by this connection, then
         channelUnsubscribed will not be invoked.
         """
-        if len(channels) == 0:
-            self._write("UNSUBSCRIBE\r\n")
-        else:
-            self._write("UNSUBSCRIBE %s\r\n" % ' '.join(channels))
+        self._send('UNSUBSCRIBE', *channels)
 
     def psubscribe(self, *patterns):
         """
@@ -1313,7 +1272,7 @@ class RedisSubscriber(RedisBase):
         channelPatternSubscribed will be invoked for each channel pattern that
         is subscribed to.
         """
-        self._write("PSUBSCRIBE %s\r\n" % ' '.join(patterns))
+        self._send('PSUBSCRIBE', *patterns)
 
     def punsubscribe(self, *patterns):
         """
@@ -1323,10 +1282,7 @@ class RedisSubscriber(RedisBase):
         channelPatternUnsubscribed will be invoked for eeach channel pattern
         that is unsubscribed from.
         """
-        if len(patterns) == 0:
-            self._write("PUNSUBSCRIBE\r\n")
-        else:
-            self._write("PUNSUBSCRIBE %s\r\n" % ' '.join(patterns))
+        self._send('PUNSUBSCRIBE', *patterns)
 
 
 class RedisClientFactory(protocol.ReconnectingClientFactory):

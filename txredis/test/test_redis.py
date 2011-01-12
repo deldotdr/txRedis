@@ -217,8 +217,16 @@ class General(CommandsTestBase):
         a = yield r.set('q', 1, expire=10)
         ex = 'OK'
         t(a, ex)
+        # the following checks the expected response of an EXPIRE on a key with
+        # an existing TTL. unfortunately the behaviour of redis changed in
+        # v2.1.3 so we have to determine which behaviour to expect...
+        info = yield r.info()
+        redis_vern = tuple(map(int, info['redis_version'].split('.')))
+        if redis_vern < (2, 1, 3):
+            ex = 0
+        else:
+            ex = 1
         a = yield r.expire('q', 1)
-        ex = 0
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -1569,7 +1577,7 @@ class Protocol(unittest.TestCase):
     def test_error_response(self):
         # pretending 'foo' is a set, so get is incorrect
         d = self.proto.get("foo")
-        self.assertEquals(self.transport.value(), "GET foo\r\n")
+        self.assertEquals(self.transport.value(), '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
         msg = "Operation against a key holding the wrong kind of value"
         self.sendResponse("-%s\r\n" % msg)
         r = yield d
@@ -1578,7 +1586,7 @@ class Protocol(unittest.TestCase):
     @defer.inlineCallbacks
     def test_singleline_response(self):
         d = self.proto.ping()
-        self.assertEquals(self.transport.value(), "PING\r\n")
+        self.assertEquals(self.transport.value(), '*1\r\n$4\r\nPING\r\n')
         self.sendResponse("+PONG\r\n")
         r = yield d
         self.assertEquals(r, 'PONG')
@@ -1586,7 +1594,7 @@ class Protocol(unittest.TestCase):
     @defer.inlineCallbacks
     def test_bulk_response(self):
         d = self.proto.get("foo")
-        self.assertEquals(self.transport.value(), "GET foo\r\n")
+        self.assertEquals(self.transport.value(), '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
         self.sendResponse("$3\r\nbar\r\n")
         r = yield d
         self.assertEquals(r, 'bar')
@@ -1594,7 +1602,8 @@ class Protocol(unittest.TestCase):
     @defer.inlineCallbacks
     def test_multibulk_response(self):
         d = self.proto.lrange("foo", 0, 1)
-        self.assertEquals(self.transport.value(), "LRANGE foo 0 1\r\n")
+        expected = '*4\r\n$6\r\nLRANGE\r\n$3\r\nfoo\r\n$1\r\n0\r\n$1\r\n1\r\n'
+        self.assertEquals(self.transport.value(), expected)
         self.sendResponse("*2\r\n$3\r\nbar\r\n$6\r\nlolwut\r\n")
         r = yield d
         self.assertEquals(r, ['bar', 'lolwut'])
@@ -1602,7 +1611,7 @@ class Protocol(unittest.TestCase):
     @defer.inlineCallbacks
     def test_integer_response(self):
         d = self.proto.dbsize()
-        self.assertEquals(self.transport.value(), "DBSIZE\r\n")
+        self.assertEquals(self.transport.value(), '*1\r\n$6\r\nDBSIZE\r\n')
         self.sendResponse(":1234\r\n")
         r = yield d
         self.assertEquals(r, 1234)
