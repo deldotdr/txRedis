@@ -1,15 +1,13 @@
 #!/usr/bin/env python
 sdict = {
     'name' : 'txredis',
-    'version' : '0.1.2',
+    'version' : '2.0',
 	'packages' : ['txredis'],
     'description' : 'Python/Twisted client for Redis key-value store',
-    'url': 'http://ooici.net/packages/txredis/',
-    'download_url' : 'http://ooici.net/packages/txredis/txredis-0.1.2.tar.gz',
     'author' : 'Dorian Raymer',
     'author_email' : 'deldotdr@gmail.com',
-    'maintainer' : 'Dorian Raymer',
-    'maintainer_email' : 'deldotdr@gmail.com',
+    'maintainer' : 'Reza Lotun',
+    'maintainer_email' : 'rlotun@gmail.com',
     'keywords': ['Redis', 'key-value store', 'Twisted'],
     'classifiers' : [
         'Development Status :: 4 - Beta',

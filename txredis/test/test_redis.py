@@ -1248,6 +1248,17 @@ class Hash(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_hget(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.hdelete('key', 'field')
+        yield r.hset('key', 'field', 'value1')
+        a = yield r.hget('key', 'field')
+        ex = {'field': 'value1'}
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_hmget(self):
         r = self.redis
         t = self.assertEqual
