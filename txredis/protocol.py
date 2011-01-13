@@ -546,7 +546,17 @@ class Redis(RedisBase):
 
         @note Time complexity: O(1)
         """
-        self._send('RPUSH' if tail else 'LPUSH', key, value)
+        if tail:
+            return self.rpush(key, value)
+        else:
+            return self.lpush(key, value)
+
+    def lpush(self, key, value):
+        self._send('LPUSH', key, value)
+        return self.getResponse()
+
+    def rpush(self, key, value):
+        self._send('RPUSH', key, value)
         return self.getResponse()
 
     def llen(self, key):
