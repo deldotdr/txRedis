@@ -251,19 +251,6 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     def bulkDataReceived(self, data):
         """Bulk data response received."""
         self._bulk_length = None
-
-        # try to convert to int/float, otherwise treat as string
-        try:
-            if data is None:
-                element = None
-            elif '.' in data:
-                element = float(data)
-            else:
-                element = int(data)
-        except ValueError:
-            element = data
-            #element = data.decode(self.charset)
-
         self.responseReceived(element)
 
     def multiBulkDataReceived(self):
