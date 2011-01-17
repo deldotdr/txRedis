@@ -1003,6 +1003,11 @@ class Redis(RedisBase):
         return self.getResponse().addCallback(post_process)
     hmget = hget
 
+    def hget_value(self, key, field):
+        assert isinstance(field, basestring)
+        self._send('HGET', key, field)
+        return self.getResponse()
+
     def hkeys(self, key):
         self._send('HKEYS', key)
         return self.getResponse()
@@ -1019,9 +1024,10 @@ class Redis(RedisBase):
         self._send('HEXISTS', key, field)
         return self.getResponse()
 
-    def hdelete(self, key, field):
+    def hdel(self, key, field):
         self._send('HDEL', key, field)
         return self.getResponse()
+    hdelete = hdel # backwards compat for older txredis
 
     def hlen(self, key):
         self._send('HLEN', key)
