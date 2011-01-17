@@ -325,6 +325,10 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
         cmd = '*%s\r\n' % len(args) + ''.join(cmds)
         self.transport.write(cmd)
 
+    def send(self, command, *args):
+        self._send(command, *args)
+        return self.getResponse()
+
 class Redis(RedisBase):
     """The main Redis client."""
 
