@@ -249,7 +249,10 @@ class General(CommandsTestBase):
 
         string = 'This is a string'
         r.set('s', string)
-        a = yield r.substr('s', 0, 3)
+        a = yield r.substr('s', 0, 3) # old name
+        ex = 'This'
+        t(a, ex)
+        a = yield r.getrange('s', 0, 3) # new name
         ex = 'This'
         t(a, ex)
 
@@ -456,7 +459,7 @@ class Strings(CommandsTestBase):
         self.assertEqual(a, 0)
 
         a = yield self.redis.get('b')
-        self.assertEqual(a, 105.2)
+        self.assertEqual(a, '105.2')
 
     @defer.inlineCallbacks
     def test_get(self):
@@ -476,7 +479,7 @@ class Strings(CommandsTestBase):
         t(a, u'pippo')
 
         a = yield r.get('b')
-        ex = 15
+        ex = '15'
         t(a, ex)
 
         a = yield r.get('d')
@@ -484,7 +487,7 @@ class Strings(CommandsTestBase):
         t(a, ex)
 
         a = yield r.get('b')
-        ex = 15
+        ex = '15'
         t(a, ex)
 
         a = yield r.get('c')
@@ -526,7 +529,7 @@ class Strings(CommandsTestBase):
         ex = 'OK'
         t(a, ex)
         a = yield r.mget('a', 'b', 'c', 'd')
-        ex = [u'pippo', 15,
+        ex = [u'pippo', '15',
               u'\\r\\naaa\\nbbb\\r\\ncccc\\nddd\\r\\n', u'\\r\\n']
         t(a, ex)
 
@@ -1106,9 +1109,27 @@ class Sets(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_sort_style(self):
+        # considering, given that redis only stores strings, whether the sort it
+        # provides is a numeric or a lexicographical sort; turns out that it's
+        # numeric; i.e. redis is doing implicit type coercion for the sort of
+        # numeric values.  This test serves to document that, and to a lesser
+        # extent check for regression in the implicit str() marshalling of txredis
+        r = self.redis
+        t = self.assertEqual
+        yield r.delete('l')
+        items = [ 007, 10, -5, 0.1, 100, -3, 20, 0.02, -3.141 ]
+        for i in items:
+            yield r.push('l', i, tail=True)
+        a = yield r.sort('l')
+        ex = map(str, sorted(items))
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_sort(self):
         r = self.redis
         t = self.assertEqual
+        s = lambda l: map(str, l)
 
         yield r.delete('l')
         a = yield r.push('l', 'ccc')
@@ -1132,27 +1153,27 @@ class Sets(CommandsTestBase):
         for i in range(1, 5):
             yield r.push('l', 1.0 / i, tail=True)
         a = yield r.sort('l')
-        ex = [0.25, 0.333333333333, 0.5, 1.0]
+        ex = s([0.25, 0.333333333333, 0.5, 1.0])
         t(a, ex)
         a = yield r.sort('l', desc=True)
-        ex = [1.0, 0.5, 0.333333333333, 0.25]
+        ex = s([1.0, 0.5, 0.333333333333, 0.25])
         t(a, ex)
         a = yield r.sort('l', desc=True, start=2, num=1)
-        ex = [0.333333333333]
+        ex = s([0.333333333333])
         t(a, ex)
         a = yield r.set('weight_0.5', 10)
         ex = 'OK'
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*')
-        ex = [0.5, 1.0, 0.333333333333, 0.25]
+        ex = s([0.5, 1.0, 0.333333333333, 0.25])
         t(a, ex)
         for i in (yield r.sort('l', desc=True)):
             yield r.set('test_%s' % i, 100 - float(i))
         a = yield r.sort('l', desc=True, get='test_*')
-        ex = [99.0, 99.5, 99.6666666667, 99.75]
+        ex = s([99.0, 99.5, 99.6666666667, 99.75])
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*', get='test_*')
-        ex = [99.5, 99.0, 99.6666666667, 99.75]
+        ex = s([99.5, 99.0, 99.6666666667, 99.75])
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*', get='missing_*')
         ex = [None, None, None, None]
@@ -1171,7 +1192,7 @@ class Sets(CommandsTestBase):
             a = yield r.set(key, value)
             t('OK', a)
             rval = yield r.get(key)
-            t(value, rval)
+            t(rval, str(value))
 
 
 class Hash(CommandsTestBase):
@@ -1324,7 +1345,7 @@ class LargeMultiBulk(CommandsTestBase):
         for i in data:
             r.sadd('s', i)
         res = yield r.smembers('s')
-        t(res, data)
+        t(res, set(map(str, data)))
 
 
 class SortedSet(CommandsTestBase):

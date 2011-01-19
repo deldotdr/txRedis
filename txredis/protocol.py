@@ -387,9 +387,10 @@ class Redis(RedisBase):
         self._send('APPEND', key, value)
         return self.getResponse()
 
-    def substr(self, key, start, end):
-        self._send('SUBSTR', key, start, end)
+    def getrange(self, key, start, end):
+        self._send('GETRANGE', key, start, end)
         return self.getResponse()
+    substr = getrange
 
     def get(self, key):
         """
@@ -453,6 +454,12 @@ class Redis(RedisBase):
         self._send('KEYS', pattern)
 
         def post_process(res):
+            # XXX this fixes a problem I saw, but really these exceptions shouldn't
+            # make it onto a callback chain - they should be raised not returned.
+            # (preferably in the context of a deferred callback chain, i.e. errback)
+            if isinstance(res, RedisError):
+                raise res
+
             if res is not None:
                 res.sort()# XXX is sort ok?
             else:
@@ -1137,7 +1144,7 @@ class Redis(RedisBase):
             bins = len(vals_and_scores) - 1
             i = 0
             while i < bins:
-                res.append((vals_and_scores[i], vals_and_scores[i+1]))
+                res.append((vals_and_scores[i], float(vals_and_scores[i+1])))
                 i += 2
             return res
 
@@ -1154,7 +1161,7 @@ class Redis(RedisBase):
 
     def zscore(self, key, element):
         self._send('ZSCORE', key, element)
-        return self.getResponse()
+        return self.getResponse().addCallback(float)
 
     def zrangebyscore(self, key, min='-inf', max='+inf', offset=None,
                       count=None, withscores=False):
@@ -1172,7 +1179,7 @@ class Redis(RedisBase):
             bins = len(vals_and_scores) - 1
             i = 0
             while i < bins:
-                res.append((vals_and_scores[i], vals_and_scores[i+1]))
+                res.append((vals_and_scores[i], float(vals_and_scores[i+1])))
                 i += 2
             return res
 
