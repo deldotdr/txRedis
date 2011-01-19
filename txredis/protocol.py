@@ -93,7 +93,7 @@ class InvalidData(RedisError):
     pass
 
 
-class RedisBase(protocol.Protocol, policies.TimeoutMixin):
+class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     """The main Redis client."""
 
     ERROR = "-"
