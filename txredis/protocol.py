@@ -251,7 +251,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin):
     def bulkDataReceived(self, data):
         """Bulk data response received."""
         self._bulk_length = None
-        self.responseReceived(element)
+        self.responseReceived(data)
 
     def multiBulkDataReceived(self):
         """Multi bulk response received.
