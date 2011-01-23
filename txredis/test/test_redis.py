@@ -5,7 +5,7 @@ from twisted.internet import error
 from twisted.internet import protocol
 from twisted.internet import reactor
 from twisted.internet import defer
-from twisted.internet.task import Clock, deferLater
+from twisted.internet.task import Clock
 from twisted.test.proto_helpers import StringTransportWithDisconnection
 from twisted.trial import unittest
 
@@ -37,7 +37,6 @@ class General(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_config(self):
-        r = self.redis
         t = self.assertEqual
         a = yield self.redis.get_config('*')
         self.assertTrue(isinstance(a, dict))
@@ -364,8 +363,8 @@ class General(CommandsTestBase):
         a = yield r.save()
         ex = 'OK'
         t(a, ex)
-        resp = yield r.save(background=True)
         """
+        resp = yield r.save(background=True)
         ex = ResponseError(
         ...     assert str(e) == 'background save already in progress', str(e)
         ... else:
@@ -1760,7 +1759,6 @@ class PubSub(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_subscribe(self):
-        r = self.redis
         s = self.subscriber
         t = self.assertEqual
 
@@ -1782,9 +1780,7 @@ class PubSub(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_unsubscribe(self):
-        r = self.redis
         s = self.subscriber
-        t = self.assertEqual
 
         cb = s.channel_subscribed
         yield s.subscribe("channelA", "channelB", "channelC")
@@ -1798,7 +1794,6 @@ class PubSub(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_psubscribe(self):
-        r = self.redis
         s = self.subscriber
         t = self.assertEqual
 
@@ -1820,9 +1815,7 @@ class PubSub(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_punsubscribe(self):
-        r = self.redis
         s = self.subscriber
-        t = self.assertEqual
 
         cb = s.channel_subscribed
         yield s.psubscribe("channel*", "magic*", "woot*")
