@@ -218,7 +218,12 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     def errorReceived(self, data):
         """Error response received."""
         reply = ResponseError(data[4:] if data[:4] == 'ERR ' else data)
-        self.responseReceived(reply)
+        if self._request_queue:
+            # properly errback this reply
+            self._request_queue.popleft().errback(reply)
+        else:
+            # we should have a request queue - if not, just raise this exception
+            raise reply
 
     def singleLineReceived(self, data):
         """Single line response received."""

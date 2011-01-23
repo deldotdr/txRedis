@@ -164,20 +164,27 @@ class General(CommandsTestBase):
         ex = True
         t(a, ex)
 
+    def test_rename_same_src_dest(self):
+        r = self.redis
+        t = self.assertEqual
+        d = r.rename('a', 'a')
+        self.failUnlessFailure(d, ResponseError)
+        def test_err(a):
+            ex = ResponseError('source and destination objects are the same')
+            t(str(a), str(ex))
+        d.addCallback(test_err)
+        return d
+
     @defer.inlineCallbacks
     def test_rename(self):
         r = self.redis
         t = self.assertEqual
 
-        a = yield r.rename('a', 'a')
-        ex = ResponseError('source and destination objects are the same')
-        t(str(a), str(ex))
         a = yield r.rename('a', 'b')
         ex = 'OK'
         t(a, ex)
-        a = yield r.rename('a', 'b')
-        ex = ResponseError('no such key')
-        t(str(a), str(ex))
+        a = yield r.get('a')
+        t(a, None)
         a = yield r.set('a', 1)
         ex = 'OK'
         t(a, ex)
@@ -398,10 +405,6 @@ class General(CommandsTestBase):
 
     @defer.inlineCallbacks
     def test_execute(self):
-        # exec without multi will return ResponseError
-        r = yield self.redis.execute()
-        self.assertEqual(str(r), 'EXEC without MULTI')
-
         # multi with two sets
         yield self.redis.multi()
         r = yield self.redis.set('foo', 'bar')
@@ -413,21 +416,39 @@ class General(CommandsTestBase):
         r = yield self.redis.get('foo')
         self.assertEqual(r, 'barbar')
 
-    @defer.inlineCallbacks
     def test_discard(self):
+        d = self.redis.execute()
         # discard without multi will return ResponseError
-        r = yield self.redis.execute()
-        self.assertEqual(str(r), 'EXEC without MULTI')
+        d = self.failUnlessFailure(d, ResponseError)
 
         # multi with two sets
-        yield self.redis.set('foo', 'bar1')
-        yield self.redis.multi()
-        r = yield self.redis.set('foo', 'bar2')
-        r = yield self.redis.discard()
-        self.assertEqual(r, 'OK')
-        r = yield self.redis.get('foo')
-        self.assertEqual(r, 'bar1')
+        def step1(_res):
+            d = self.redis.set('foo', 'bar1')
 
+            def step2(_res):
+                d = self.redis.multi()
+                def in_multi(_res):
+                    d = self.redis.set('foo', 'bar2')
+                    def step3(_res):
+                        d = self.redis.discard()
+                        def step4(r):
+                            self.assertEqual(r, 'OK')
+                            d = self.redis.get('foo')
+                            def got_it(res):
+                                self.assertEqual(res, 'bar1')
+                            d.addCallback(got_it)
+                            return d
+                        d.addCallback(step4)
+                        return d
+                    d.addCallback(step3)
+                    return d
+                d.addCallback(in_multi)
+                return d
+            d.addCallback(step2)
+            return d
+
+        d.addCallback(step1)
+        return d
 
 class Strings(CommandsTestBase):
     """Test commands that operate on string values.
@@ -624,10 +645,6 @@ class Lists(CommandsTestBase):
         a = yield r.set('a', 'a')
         ex = 'OK'
         t(a, ex)
-        a = yield r.push('a', 'a')
-        ex = ResponseError('Operation against a key holding the wrong kind '+
-                           'of value')
-        t(str(a), str(ex))
 
     @defer.inlineCallbacks
     def test_llen(self):
@@ -770,21 +787,53 @@ class Lists(CommandsTestBase):
         ex = None
         t(a, ex)
 
+    def test_lset_on_nonexistant_key(self):
+        r = self.redis
+        t = self.assertEqual
+
+        d = r.delete('l')
+        def bad_lset(_res):
+            d = r.lset('l', 0, 'a')
+            self.failUnlessFailure(d, ResponseError)
+            def match_err(a):
+                ex = ResponseError('no such key')
+                t(str(a), str(ex))
+            d.addCallback(match_err)
+            return d
+        d.addCallback(bad_lset)
+        return d
+
+    def test_lset_bad_range(self):
+        r = self.redis
+        t = self.assertEqual
+
+        d = r.delete('l')
+        def proceed(_res):
+            d = r.push('l', 'aaa')
+            def done_push(a):
+                ex = 1
+                t(a, ex)
+                d = r.lset('l', 1, 'a')
+                self.failUnlessFailure(d, ResponseError)
+                def check(a):
+                    ex = ResponseError('index out of range')
+                    t(str(a), str(ex))
+                d.addCallback(check)
+                return d
+            d.addCallback(done_push)
+            return d
+        d.addCallback(proceed)
+        return d
+
     @defer.inlineCallbacks
     def test_lset(self):
         r = self.redis
         t = self.assertEqual
 
         yield r.delete('l')
-        a = yield r.lset('l', 0, 'a')
-        ex = ResponseError('no such key')
-        t(str(a), str(ex))
         a = yield r.push('l', 'aaa')
         ex = 1
         t(a, ex)
-        a = yield r.lset('l', 1, 'a')
-        ex = ResponseError('index out of range')
-        t(str(a), str(ex))
         a = yield r.lset('l', 0, 'bbb')
         ex = 'OK'
         t(a, ex)
@@ -994,13 +1043,6 @@ class Sets(CommandsTestBase):
         a = yield r.sadd('s3', 'b')
         ex = 1
         t(a, ex)
-        a = yield r.sinter()
-        ex = ResponseError("wrong number of arguments for 'sinter' command")
-        t(str(a), str(ex))
-        a = yield r.sinter('l')
-        ex = ResponseError('Operation against a key holding the wrong kind '+
-                           'of value')
-        t(str(a), str(ex))
         a = yield r.sinter('s1', 's2', 's3')
         ex = set([])
         t(a, ex)
@@ -1049,10 +1091,6 @@ class Sets(CommandsTestBase):
         a = yield r.sadd('s', 'b')
         ex = 1
         t(a, ex)
-        a = yield r.smembers('l')
-        ex = ResponseError('Operation against a key holding the wrong kind '+
-                           'of value')
-        t(str(a), str(ex))
         a = yield r.smembers('s')
         ex = set([u'a', u'b'])
         t(a, ex)
@@ -1605,15 +1643,16 @@ class Protocol(unittest.TestCase):
     def sendResponse(self, data):
         self.proto.dataReceived(data)
 
-    @defer.inlineCallbacks
     def test_error_response(self):
         # pretending 'foo' is a set, so get is incorrect
         d = self.proto.get("foo")
         self.assertEquals(self.transport.value(), '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
         msg = "Operation against a key holding the wrong kind of value"
         self.sendResponse("-%s\r\n" % msg)
-        r = yield d
-        self.assertEquals(str(r), msg)
+        self.failUnlessFailure(d, ResponseError)
+        def check_err(r):
+            self.assertEquals(str(r), msg)
+        return d
 
     @defer.inlineCallbacks
     def test_singleline_response(self):
