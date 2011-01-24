@@ -459,12 +459,6 @@ class Redis(RedisBase):
         self._send('KEYS', pattern)
 
         def post_process(res):
-            # XXX this fixes a problem I saw, but really these exceptions shouldn't
-            # make it onto a callback chain - they should be raised not returned.
-            # (preferably in the context of a deferred callback chain, i.e. errback)
-            if isinstance(res, RedisError):
-                raise res
-
             if res is not None:
                 res.sort()# XXX is sort ok?
             else:
