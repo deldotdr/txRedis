@@ -973,18 +973,40 @@ class Redis(RedisBase):
     # HVALS
     # HGETALL
     def hmset(self, key, in_dict):
+        """
+        Sets the specified fields to their respective values in the hash stored
+        at key. This command overwrites any existing fields in the hash. If key
+        does not exist, a new key holding a hash is created.
+        """
         fields = list(chain(*in_dict.iteritems()))
         self._send('HMSET', key, *fields)
         return self.getResponse()
 
     def hset(self, key, field, value, preserve=False):
+        """
+        Sets field in the hash stored at key to value. If key does not exist, a
+        new key holding a hash is created. If field already exists in the hash,
+        it is overwritten.
+        """
         if preserve:
-            self._send('HSETNX', key, field, value)
+            return self.hsetnx(key, field, value)
         else:
             self._send('HSET', key, field, value)
+            return self.getResponse()
+
+    def hsetnx(self, key, field, value):
+        """
+        Sets field in the hash stored at key to value, only if field does not
+        yet exist. If key does not exist, a new key holding a hash is created.
+        If field already exists, this operation has no effect.
+        """
+        self._send('HSETNX', key, field, value)
         return self.getResponse()
 
     def hget(self, key, field):
+        """
+        Returns the value associated with field in the hash stored at key.
+        """
         if isinstance(field, basestring):
             self._send('HGET', key, field)
         else:
@@ -1014,23 +1036,46 @@ class Redis(RedisBase):
         return self.getResponse()
 
     def hincr(self, key, field, amount=1):
+        """
+        Increments the number stored at field in the hash stored at key by
+        increment. If key does not exist, a new key holding a hash is created.
+        If field does not exist or holds a string that cannot be interpreted as
+        integer, the value is set to 0 before the operation is performed.  The
+        range of values supported by HINCRBY is limited to 64 bit signed
+        integers.
+        """
         self._send('HINCRBY', key, field, amount)
         return self.getResponse()
+    hincrby = hincr
 
     def hexists(self, key, field):
+        """
+        Returns if field is an existing field in the hash stored at key.
+        """
         self._send('HEXISTS', key, field)
         return self.getResponse()
 
     def hdel(self, key, field):
+        """
+        Removes field from the hash stored at key.
+        """
         self._send('HDEL', key, field)
         return self.getResponse()
     hdelete = hdel # backwards compat for older txredis
 
     def hlen(self, key):
+        """
+        Returns the number of fields contained in the hash stored at key.
+        """
         self._send('HLEN', key)
         return self.getResponse()
 
     def hgetall(self, key):
+        """
+        Returns all fields and values of the hash stored at key. In the
+        returned value, every field name is followed by its value, so the
+        length of the reply is twice the size of the hash.
+        """
         self._send('HGETALL', key)
 
         def post_process(key_vals):

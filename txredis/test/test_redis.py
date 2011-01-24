@@ -1246,6 +1246,24 @@ class Hash(CommandsTestBase):
         self.assertEquals(a, {'blank': ''})
 
     @defer.inlineCallbacks
+    def test_cas(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.delete('h')
+        ex = 1
+        t(a, ex)
+
+        a = yield r.hsetnx('h', 'f', 'v')
+        ex = 1
+        t(a, ex)
+
+        a = yield r.hsetnx('h', 'f', 'v')
+        ex = 0
+        t(a, ex)
+
+
+    @defer.inlineCallbacks
     def test_basic(self):
         r = self.redis
         t = self.assertEqual
