@@ -895,7 +895,17 @@ class Redis(RedisBase):
     def flush(self, all_dbs=False):
         """
         """
-        self._send('FLUSHALL' if all_dbs else 'FLUSHDB')
+        if all_dbs:
+            return self.flushall()
+        else:
+            return self.flushdb()
+
+    def flushall(self):
+        self._send('FLUSHALL')
+        return self.getResponse()
+
+    def flushdb(self):
+        self._send('FLUSHDB')
         return self.getResponse()
 
     # Persistence control commands
