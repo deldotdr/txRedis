@@ -350,6 +350,38 @@ class Redis(RedisBase):
         self._send('PING')
         return self.getResponse()
 
+    def shutdown(self):
+        """
+        Synchronously save the dataset to disk and then shut down the server
+        """
+        self._send('SHUTDOWN')
+        return self.getResponse()
+
+    def slaveof(self, host, port):
+        """
+        Make the server a slave of another instance, or promote it as master
+
+        The SLAVEOF command can change the replication settings of a slave on
+        the fly. If a Redis server is arleady acting as slave, the command
+        SLAVEOF NO ONE will turn off the replicaiton turning the Redis server
+        into a MASTER. In the proper form SLAVEOF hostname port will make the
+        server a slave of the specific server listening at the specified
+        hostname and port.
+
+        If a server is already a slave of some master, SLAVEOF hostname port
+        will stop the replication against the old server and start the
+        synchrnonization against the new one discarding the old dataset.
+
+        The form SLAVEOF no one will stop replication turning the server into a
+        MASTER but will not discard the replication. So if the old master stop
+        working it is possible to turn the slave into a master and set the
+        application to use the new master in read/write. Later when the other
+        Redis server will be fixed it can be configured in order to work as
+        slave.
+        """
+        self._send('SLAVEOF', host, port)
+        return self.getResponse()
+
     def get_config(self, pattern):
         """
         Get configuration for Redis at runtime.
@@ -495,6 +527,7 @@ class Redis(RedisBase):
 
     def dbsize(self):
         """
+        Return the number of keys in the selected database
         """
         self._send('DBSIZE')
         return self.getResponse()
@@ -895,6 +928,8 @@ class Redis(RedisBase):
     # Multiple databases handling commands
     def select(self, db):
         """
+        Select the DB with having the specified zero-based numeric index. New
+        connections always use DB 0.
         """
         self._send('SELECT', db)
         return self.getResponse()
@@ -922,23 +957,50 @@ class Redis(RedisBase):
         return self.getResponse()
 
     # Persistence control commands
+    def bgrewriteaof(self):
+        """
+        Rewrites the append-only file to reflect the current dataset in memory.
+        If BGREWRITEAOF fails, no data gets lost as the old AOF will be
+        untouched.
+        """
+        self._send('BGREWRITEAOF')
+        return self.getResponse()
+
+    def bgsave(self):
+        """
+        Save the DB in background. The OK code is immediately returned. Redis
+        forks, the parent continues to server the clients, the child saves the
+        DB on disk then exit. A client my be able to check if the operation
+        succeeded using the LASTSAVE command.
+        """
+        self._send('BGSAVE')
+        return self.getResponse()
+
     def save(self, background=False):
         """
+        Synchronously save the dataset to disk.
         """
         if background:
-            self._send('BGSAVE')
+            return self.bgsave()
         else:
             self._send('SAVE')
         return self.getResponse()
 
     def lastsave(self):
         """
+        Return the UNIX TIME of the last DB save executed with success. A
+        client may check if a BGSAVE command succeeded reading the LASTSAVE
+        value, then issuing a BGSAVE command and checking at regular intervals
+        every N seconds if LASTSAVE changed.
         """
         self._send('LASTSAVE')
         return self.getResponse()
 
     def info(self):
         """
+        The info command returns different information and statistics about the
+        server in an format that's simple to parse by computers and easy to red
+        by huamns.
         """
         self._send('INFO')
 
@@ -980,7 +1042,36 @@ class Redis(RedisBase):
         return self.getResponse()
 
     def auth(self, passwd):
+        """
+        Request for authentication in a password protected Redis server. Redis
+        can be instructed to require a password before allowing clients to
+        execute commands. This is done using the requirepass directive in the
+        configuration file.  If password matches the password in the
+        configuration file, the server replies with the OK status code and
+        starts accepting commands. Otherwise, an error is returned and the
+        clients needs to try a new password.
+
+        Note: because of the high performance nature of Redis, it is possible
+        to try a lot of passwords in parallel in very short time, so make sure
+        to generate a strong and very long password so that this attack is
+        infeasible.
+        """
         self._send('AUTH', passwd)
+        return self.getResponse()
+
+    def quit(self):
+        """
+        Ask the server to close the connection. The connection is closed as
+        soon as all pending replies have been written to the client.
+        """
+        self._send('QUIT')
+        return self.getResponse()
+
+    def echo(self, msg):
+        """
+        Returns message.
+        """
+        self._send('ECHO', msg)
         return self.getResponse()
 
     # # # # # # # # #
