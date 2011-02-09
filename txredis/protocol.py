@@ -544,22 +544,44 @@ class Redis(RedisBase):
         self._send('TTL', key)
         return self.getResponse()
 
+    # transaction commands:
     def multi(self):
+        """
+        Mark the start of a transaction block
+        """
         self._send('MULTI')
         return self.getResponse()
 
     def execute(self):
-        """Sends the EXEC command
+        """
+        Sends the EXEC command
 
         Called execute because exec is a reserved word in Python.
-
         """
         self._send('EXEC')
         return self.getResponse()
 
     def discard(self):
+        """
+        Discard all commands issued after MULTI
+        """
         self._send('DISCARD')
         return self.getResponse()
+
+    def watch(self, *keys):
+        """
+        Watch the given keys to determine execution of the MULTI/EXEC block
+        """
+        self._send('WATCH', *keys)
+        return self.getResponse()
+
+    def unwatch(self, *keys):
+        """
+        Forget about all watched keys
+        """
+        self._send('UNWATCH', *keys)
+        return self.getResponse()
+
 
     # # # # # # # # #
     # List Commands:

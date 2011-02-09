@@ -1490,6 +1490,10 @@ class SortedSet(CommandsTestBase):
         t = self.assertEqual
 
         yield r.delete('z')
+        a = yield r.zrangebyscore('z', -1, -1, withscores=True)
+        ex = []
+        t(a, ex)
+
         yield r.zadd('z', 'a', 1.014)
         yield r.zadd('z', 'b', 4.252)
         yield r.zadd('z', 'c', 0.232)
