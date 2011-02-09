@@ -13,15 +13,24 @@ from txredis.protocol import Redis, RedisSubscriber, RedisClientFactory
 from txredis.protocol import ResponseError
 
 REDIS_HOST = 'localhost'
-REDIS_PORT = 6379
+REDIS_PORT = 6381
 
 
 class CommandsTestBase(unittest.TestCase):
-
-    @defer.inlineCallbacks
     def setUp(self):
         clientCreator = protocol.ClientCreator(reactor, Redis)
-        self.redis = yield clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
+        d = clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
+        def got_conn(redis):
+            self.redis = redis
+        d.addCallback(got_conn)
+        def cannot_conn(res):
+            msg = '\n' * 3 + '*' * 80 + '\n' * 2
+            msg += "NOTE: Redis server not running on port %s. Please start a local instance of Redis " \
+                  "on this port to run unit tests against.\n\n" % REDIS_PORT
+            msg += '*' * 80 + '\n' * 4
+            raise unittest.SkipTest(msg)
+        d.addErrback(cannot_conn)
+        return d
 
     def tearDown(self):
         self.redis.transport.loseConnection()
@@ -355,34 +364,30 @@ class General(CommandsTestBase):
         ex = 'OK'
         t(a, ex)
 
-    @defer.inlineCallbacks
-    def test_save(self):
-        r = self.redis
-        t = self.assertEqual
-
-        a = yield r.save()
-        ex = 'OK'
-        t(a, ex)
-        """
-        resp = yield r.save(background=True)
-        ex = ResponseError(
-        ...     assert str(e) == 'background save already in progress', str(e)
-        ... else:
-        ...     assert resp == 'OK'
-        """
-
-    @defer.inlineCallbacks
     def test_lastsave(self):
         r = self.redis
         t = self.assertEqual
 
         tme = int(time.time())
-        a = yield r.save()
-        ex = 'OK'
-        t(a, ex)
-        a = (yield r.lastsave()) >= tme
-        ex = True
-        t(a, ex)
+        d = r.save()
+        def done_save(a):
+            ex = 'OK'
+            t(a, ex)
+            d = r.lastsave()
+            def got_lastsave(a):
+                a = a >= tme
+                ex = True
+                t(a, ex)
+            d.addCallback(got_lastsave)
+            return d
+
+        def save_err(res):
+            if 'Background save already in progress' in str(res):
+                return True
+            else:
+                raise res
+        d.addCallbacks(done_save, save_err)
+        return d
 
     @defer.inlineCallbacks
     def test_info(self):
@@ -1704,17 +1709,27 @@ class Protocol(unittest.TestCase):
         r = yield d
         self.assertEquals(r, 1234)
 
-
-class TestFactory(unittest.TestCase):
-    @defer.inlineCallbacks
+class TestFactory(CommandsTestBase):
     def setUp(self):
-        self.factory = RedisClientFactory()
-        reactor.connectTCP(REDIS_HOST, REDIS_PORT, self.factory)
-        yield self.factory.deferred
+        d = CommandsTestBase.setUp(self)
+        def do_setup(_res):
+            self.factory = RedisClientFactory()
+            reactor.connectTCP(REDIS_HOST, REDIS_PORT, self.factory)
+            d = self.factory.deferred
+            def cannot_connect(_res):
+                raise unittest.SkipTest('Cannot connect to Redis.')
+            d.addErrback(cannot_connect)
+            return d
+        d.addCallback(do_setup)
+        return d
 
     def tearDown(self):
+        CommandsTestBase.tearDown(self)
+        self.factory.continueTrying = 0
         self.factory.stopTrying()
-        self.factory.client.transport.loseConnection()
+        if self.factory.client:
+            self.factory.client.setTimeout(None)
+            self.factory.client.transport.loseConnection()
 
     @defer.inlineCallbacks
     def test_reconnect(self):
@@ -1729,6 +1744,7 @@ class TestFactory(unittest.TestCase):
 
         a = yield self.factory.client.info()
         self.assertTrue('uptime_in_days' in a)
+    timeout = 4
 
 
 class ProtocolBuffering(Protocol):
