@@ -72,6 +72,10 @@ from itertools import chain, izip
 from twisted.internet import defer, protocol
 from twisted.protocols import policies
 
+try:
+    import hiredis
+except ImportError:
+    pass
 
 class RedisError(Exception):
     pass
@@ -230,7 +234,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
     def errorReceived(self, data):
         """Error response received."""
-        reply = ResponseError(data[4:] if data[:4] == 'ERR ' else data)
+        reply = ResponseError(data if data[:4] == 'ERR ' else data)
         if self._request_queue:
             # properly errback this reply
             self._request_queue.popleft().errback(reply)
@@ -333,6 +337,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     def send(self, command, *args):
         self._send(command, *args)
         return self.getResponse()
+
 
 class Redis(RedisBase):
     """The main Redis client."""
@@ -1366,6 +1371,29 @@ class Redis(RedisBase):
         if withscores:
             dfr.addCallback(post_process)
         return dfr
+
+class HiRedisProtocol(Redis):
+    """ A subclass of the Redis protocol that uses the hiredis library for parsing. """
+    def __init__(self, db=None, password=None, charset='utf8', errors='strict'):
+        Redis.__init__(self, db, password, charset, errors)
+        self._reader = hiredis.Reader(protocolError=InvalidData,
+                                      replyError=ResponseError)
+
+    def dataReceived(self, data):
+        """Receive data.
+        """
+        self.resetTimeout()
+        if data:
+            self._reader.feed(data)
+        res = self._reader.gets()
+        while res is not False:
+            if isinstance(res, ResponseError):
+                self._request_queue.popleft().errback(res)
+            else:
+                if isinstance(res, basestring) and res == 'none':
+                    res = None
+                self._request_queue.popleft().callback(res)
+            res = self._reader.gets()
 
 
 class RedisSubscriber(RedisBase):

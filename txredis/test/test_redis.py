@@ -17,8 +17,9 @@ REDIS_PORT = 6381
 
 
 class CommandsTestBase(unittest.TestCase):
+    protocol = Redis
     def setUp(self):
-        clientCreator = protocol.ClientCreator(reactor, Redis)
+        clientCreator = protocol.ClientCreator(reactor, self.protocol)
         d = clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
         def got_conn(redis):
             self.redis = redis
@@ -132,6 +133,7 @@ class General(CommandsTestBase):
         a = yield r.get_type('zzz')
         ex = None
         t(a, ex)
+        self.assertTrue(a == None or a == 'none')
 
     @defer.inlineCallbacks
     def test_keys(self):
@@ -178,7 +180,7 @@ class General(CommandsTestBase):
         d = r.rename('a', 'a')
         self.failUnlessFailure(d, ResponseError)
         def test_err(a):
-            ex = ResponseError('source and destination objects are the same')
+            ex = ResponseError('ERR source and destination objects are the same')
             t(str(a), str(ex))
         d.addCallback(test_err)
         return d
@@ -203,11 +205,9 @@ class General(CommandsTestBase):
     @defer.inlineCallbacks
     def test_dbsize(self):
         r = self.redis
-        t = self.assertEqual
-
-        a = type((yield r.dbsize()))
-        ex = int
-        t(a, ex)
+        t = self.assertTrue
+        a = yield r.dbsize()
+        t(isinstance(a, int) or isinstance(a, long))
 
     @defer.inlineCallbacks
     def test_expire(self):
@@ -800,7 +800,7 @@ class Lists(CommandsTestBase):
             d = r.lset('l', 0, 'a')
             self.failUnlessFailure(d, ResponseError)
             def match_err(a):
-                ex = ResponseError('no such key')
+                ex = ResponseError('ERR no such key')
                 t(str(a), str(ex))
             d.addCallback(match_err)
             return d
@@ -820,7 +820,7 @@ class Lists(CommandsTestBase):
                 d = r.lset('l', 1, 'a')
                 self.failUnlessFailure(d, ResponseError)
                 def check(a):
-                    ex = ResponseError('index out of range')
+                    ex = ResponseError('ERR index out of range')
                     t(str(a), str(ex))
                 d.addCallback(check)
                 return d
@@ -1619,6 +1619,25 @@ class BlockingListOperartions(CommandsTestBase):
         r2.transport.loseConnection()
 
 
+# if hiredis and its python wrappers are installed, test them too
+try:
+    import hiredis
+    from txredis.protocol import HiRedisProtocol
+    class HiRedisGeneral(General):
+        protcol = HiRedisProtocol
+    class HiRedisStrings(Strings):
+        protocol = HiRedisProtocol
+    class HiRedisLists(Lists):
+        protocol = HiRedisProtocol
+    class HiRedisHash(Hash):
+        protocol = HiRedisProtocol
+    class HiRedisSortedSet(SortedSet):
+        protocol = HiRedisProtocol
+    class HiRedisSets(Sets):
+        protocol = HiRedisProtocol
+except ImportError:
+    pass
+
 class Network(unittest.TestCase):
 
     def setUp(self):
@@ -1656,6 +1675,7 @@ class Network(unittest.TestCase):
                 result.trap(error.ConnectionDone)
 
         return done.addCallback(checkFailures)
+
 
 
 class Protocol(unittest.TestCase):

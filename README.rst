@@ -5,6 +5,11 @@ txredis - asynchronous redis client for Python
 An asynchronous Redis client library for the Twisted Python
 framework.
 
+Included are two protocol implementations, one using a custome Twisted
+based protocol parser, and another using the hiredis protocol parser.
+To install hiredis simply:
+
+       pip install -U hiredis
 
 
 Contact
