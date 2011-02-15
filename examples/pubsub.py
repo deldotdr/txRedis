@@ -1,17 +1,12 @@
 from twisted.internet import reactor, protocol, defer
 from twisted.python import log
 
-from txredis.protocol import Redis
+from txredis.protocol import Redis, RedisSubscriber
 
 import sys
 
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
-
-class RedisSubscriber(Redis):
-    def messageReceived(self, channel, message):
-        log.msg("messageReceived on channel %s: %s" % (channel, message))
-        reactor.stop()
 
 @defer.inlineCallbacks
 def getRedisSubscriber():
