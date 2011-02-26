@@ -8,9 +8,14 @@ import sys
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
 
+class Subscriber(RedisSubscriber):
+
+    def messageReceived(self, channel, message):
+        log.msg("got message %r on channel %s" % (message, channel))
+
 @defer.inlineCallbacks
 def getRedisSubscriber():
-    clientCreator = protocol.ClientCreator(reactor, RedisSubscriber)
+    clientCreator = protocol.ClientCreator(reactor, Subscriber)
     redis = yield clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
     defer.returnValue(redis)
 
