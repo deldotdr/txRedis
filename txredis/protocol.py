@@ -1416,11 +1416,9 @@ class RedisSubscriber(RedisBase):
         if reply[0] == u"message":
             channel, message = reply[1:]
             self.messageReceived(channel, message)
-            return
         elif reply[0] == u"pmessage":
             pattern, channel, message = reply[1:]
             self.messageReceived(channel, message)
-            return
         elif reply[0] == u"subscribe":
             channel, numSubscribed = reply[1:]
             self.channelSubscribed(channel, numSubscribed)
@@ -1433,8 +1431,8 @@ class RedisSubscriber(RedisBase):
         elif reply[0] == u"punsubscribe":
             channelPattern, numSubscribed = reply[1:]
             self.channelPatternUnsubscribed(channelPattern, numSubscribed)
-
-        RedisBase.handleCompleteMultiBulkData(self, reply)
+        else:
+            RedisBase.handleCompleteMultiBulkData(self, reply)
 
     def messageReceived(self, channel, message):
         """
@@ -1478,7 +1476,6 @@ class RedisSubscriber(RedisBase):
         channel will continue to be subscribed to.
         """
         self._send('SUBSCRIBE', *channels)
-        return self.getResponse()
 
     def unsubscribe(self, *channels):
         """
@@ -1490,7 +1487,6 @@ class RedisSubscriber(RedisBase):
         channelUnsubscribed will not be invoked.
         """
         self._send('UNSUBSCRIBE', *channels)
-        return self.getResponse()
 
     def psubscribe(self, *patterns):
         """
@@ -1501,7 +1497,6 @@ class RedisSubscriber(RedisBase):
         is subscribed to.
         """
         self._send('PSUBSCRIBE', *patterns)
-        return self.getResponse()
 
     def punsubscribe(self, *patterns):
         """
@@ -1512,7 +1507,6 @@ class RedisSubscriber(RedisBase):
         that is unsubscribed from.
         """
         self._send('PUNSUBSCRIBE', *patterns)
-        return self.getResponse()
 
 
 class RedisClientFactory(protocol.ReconnectingClientFactory):

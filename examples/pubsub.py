@@ -10,6 +10,14 @@ REDIS_PORT = 6379
 
 class Subscriber(RedisSubscriber):
 
+    num_channels = 0
+
+    def channelSubscribed(self, channel, numSubscribed):
+        self.num_channels += 1
+
+    def channelUnsubscribed(self, channel, numSubscribed):
+        self.num_channels -= 1
+
     def messageReceived(self, channel, message):
         log.msg("got message %r on channel %s" % (message, channel))
 
@@ -33,6 +41,11 @@ def runTest():
     log.msg("redis1: SUBSCRIBE w00t")
     response = yield redis1.subscribe("w00t")
     log.msg("subscribed to w00t, response = %r" % response)
+
+    while redis1.num_channels == 0:
+        d = defer.Deferred()
+        reactor.callLater(0.1, d.callback, True)
+        yield d
 
     log.msg("redis2: PUBLISH w00t 'Hello, world!'")
     response = yield redis2.publish("w00t", "Hello, world!")
