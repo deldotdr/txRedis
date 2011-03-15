@@ -121,13 +121,12 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     def dataReceived(self, data):
         """Receive data.
 
-        Spec: http://code.google.com/p/redis/wiki/ProtocolSpecification
-
+        Spec: http://redis.io/topics/protocol
         """
+        self.resetTimeout()
         self._buffer = self._buffer + data
 
         while self._buffer:
-            self.resetTimeout()
 
             # if we're expecting bulk data, read that many bytes
             if self._bulk_length is not None:
@@ -1339,6 +1338,10 @@ class Redis(RedisBase):
 
     def zrevrange(self, key, start, end, withscores=False):
         return self.zrange(key, start, end, withscores, reverse=True)
+
+    def zrevrank(self, key, member):
+        self._send('ZREVRANK', key, member)
+        return self.getResponse()
 
     def zcard(self, key):
         self._send('ZCARD', key)
