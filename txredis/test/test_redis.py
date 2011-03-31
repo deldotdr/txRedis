@@ -1635,6 +1635,8 @@ try:
         protocol = HiRedisProtocol
     class HiRedisSets(Sets):
         protocol = HiRedisProtocol
+    _hush_pyflakes = hiredis
+    del _hush_pyflakes
 except ImportError:
     pass
 
