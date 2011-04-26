@@ -1349,7 +1349,12 @@ class Redis(RedisBase):
 
     def zscore(self, key, element):
         self._send('ZSCORE', key, element)
-        return self.getResponse().addCallback(float)
+        def post_process(res):
+            if res is not None:
+                return float(res)
+            else:
+                return res
+        return self.getResponse().addCallback(post_process)
 
     def zrangebyscore(self, key, min='-inf', max='+inf', offset=None,
                       count=None, withscores=False):

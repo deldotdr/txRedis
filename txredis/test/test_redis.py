@@ -1514,6 +1514,20 @@ class SortedSet(CommandsTestBase):
         ex = [('b', 4.252), ('d', 10.425)]
 
     @defer.inlineCallbacks
+    def test_zscore_and_zrange_nonexistant(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('a')
+        a = yield r.zscore('a', 'somekey')
+        t(a, None)
+
+        yield r.delete('a')
+        a = yield r.zrange('a', 0, -1, withscores=True)
+        t(a, [])
+
+
+    @defer.inlineCallbacks
     def test_zaggregatestore(self):
         r = self.redis
         t = self.assertEqual
