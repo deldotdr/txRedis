@@ -1633,27 +1633,6 @@ class BlockingListOperartions(CommandsTestBase):
         r2.transport.loseConnection()
 
 
-# if hiredis and its python wrappers are installed, test them too
-try:
-    import hiredis
-    from txredis.protocol import HiRedisProtocol
-    class HiRedisGeneral(General):
-        protcol = HiRedisProtocol
-    class HiRedisStrings(Strings):
-        protocol = HiRedisProtocol
-    class HiRedisLists(Lists):
-        protocol = HiRedisProtocol
-    class HiRedisHash(Hash):
-        protocol = HiRedisProtocol
-    class HiRedisSortedSet(SortedSet):
-        protocol = HiRedisProtocol
-    class HiRedisSets(Sets):
-        protocol = HiRedisProtocol
-    _hush_pyflakes = hiredis
-    del _hush_pyflakes
-except ImportError:
-    pass
-
 class Network(unittest.TestCase):
 
     def setUp(self):
