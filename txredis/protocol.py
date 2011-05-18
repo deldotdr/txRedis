@@ -77,6 +77,7 @@ try:
 except ImportError:
     pass
 
+
 class RedisError(Exception):
     pass
 
@@ -106,7 +107,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     BULK = "$"
     MULTI_BULK = "*"
 
-    def __init__(self, db=None, password=None, charset='utf8', errors='strict'):
+    def __init__(self, db=None, password=None, charset='utf8',
+                 errors='strict'):
         self.charset = charset
         self.db = db if db is not None else 0
         self.password = password
@@ -131,10 +133,11 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             # if we're expecting bulk data, read that many bytes
             if self._bulk_length is not None:
                 # wait until there's enough data in the buffer
-                if len(self._buffer) < self._bulk_length + 2: # /r/n
+                # we add 2 to _bulk_length to account for \r\n
+                if len(self._buffer) < self._bulk_length + 2:
                     return
                 data = self._buffer[:self._bulk_length]
-                self._buffer = self._buffer[self._bulk_length+2:] # 2 for /r/n
+                self._buffer = self._buffer[self._bulk_length + 2:]
                 self.bulkDataReceived(data)
                 continue
 
@@ -200,11 +203,11 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
         # if we have a password set, make sure we auth
         if self.password:
-            d.addCallback(lambda _res : self.auth(self.password))
+            d.addCallback(lambda _res: self.auth(self.password))
 
         # select the db passsed in
         if self.db:
-            d.addCallback(lambda _res : self.select(self.db))
+            d.addCallback(lambda _res: self.select(self.db))
 
         def done_connecting(_res):
             # set our state as soon as we're properly connected
@@ -238,13 +241,14 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             # properly errback this reply
             self._request_queue.popleft().errback(reply)
         else:
-            # we should have a request queue - if not, just raise this exception
+            # we should have a request queue. if not, just raise this exception
             raise reply
 
     def singleLineReceived(self, data):
         """Single line response received."""
         if data == 'none':
-            reply = None # should this happen here in the client?
+            # should this happen here in the client?
+            reply = None
         else:
             reply = data
 
@@ -325,7 +329,11 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         return str(s)
 
     def _send(self, *args):
-        """Encode and send a request using the 'unified request protocol' (aka multi-bulk)"""
+        """Encode and send a request
+
+        Uses the 'unified request protocol' (aka multi-bulk)
+
+        """
         cmds = []
         for i in args:
             v = self._encode(i)
@@ -391,6 +399,7 @@ class Redis(RedisBase):
         Get configuration for Redis at runtime.
         """
         self._send('CONFIG', 'GET', pattern)
+
         def post_process(values):
             # transform into dict
             res = {}
@@ -509,7 +518,8 @@ class Redis(RedisBase):
 
         def post_process(res):
             if res is not None:
-                res.sort()# XXX is sort ok?
+                # XXX is sort ok?
+                res.sort()
             else:
                 res = []
             return res
@@ -527,7 +537,7 @@ class Redis(RedisBase):
         """
         """
         self._send('RENAMENX' if preserve else 'RENAME', src, dst)
-        return self.getResponse() #.strip()
+        return self.getResponse()
 
     def dbsize(self):
         """
@@ -585,7 +595,6 @@ class Redis(RedisBase):
         """
         self._send('UNWATCH', *keys)
         return self.getResponse()
-
 
     # # # # # # # # #
     # List Commands:
@@ -777,7 +786,8 @@ class Redis(RedisBase):
         client values will return false or nil accordingly to the
         programming language used.
         """
-        self._send('BRPOP' if tail else 'BLPOP', *(list(keys) + [str(timeout)]))
+        cmd = 'BRPOP' if tail else 'BLPOP'
+        self._send(cmd, *(list(keys) + [str(timeout)]))
         return self.getResponse()
 
     def rpoplpush(self, srckey, dstkey):
@@ -935,7 +945,7 @@ class Redis(RedisBase):
         return self.getResponse().addCallback(self._list_to_set)
 
     def smove(self, srckey, dstkey, member):
-        """ Move the specifided member from the set at srckey to the set at dstkey. """
+        """Move member from the set at srckey to the set at dstkey."""
         self._send('SMOVE', srckey, dstkey, member)
         return self.getResponse()
 
@@ -1201,7 +1211,7 @@ class Redis(RedisBase):
         """
         self._send('HDEL', key, field)
         return self.getResponse()
-    hdelete = hdel # backwards compat for older txredis
+    hdelete = hdel  # backwards compat for older txredis
 
     def hlen(self, key):
         """
@@ -1295,9 +1305,11 @@ class Redis(RedisBase):
         return self._zopstore('ZUNIONSTORE', dstkey, keys, aggregate)
 
     def zinterstore(self, dstkey, keys, aggregate=None):
-        """ Creates an intersection of N sorted sets at dstkey. keys can be a list
-        of keys or dict of keys mapping to weights. aggregate can be
-        one of SUM, MIN or MAX.
+        """Creates an intersection of N sorted sets at dstkey.
+
+        Keys can be a list of keys or dict of keys mapping to weights.
+        Aggregate can be one of SUM, MIN or MAX.
+
         """
         return self._zopstore('ZINTERSTORE', dstkey, keys, aggregate)
 
@@ -1328,7 +1340,7 @@ class Redis(RedisBase):
             bins = len(vals_and_scores) - 1
             i = 0
             while i < bins:
-                res.append((vals_and_scores[i], float(vals_and_scores[i+1])))
+                res.append((vals_and_scores[i], float(vals_and_scores[i + 1])))
                 i += 2
             return res
 
@@ -1349,6 +1361,7 @@ class Redis(RedisBase):
 
     def zscore(self, key, element):
         self._send('ZSCORE', key, element)
+
         def post_process(res):
             if res is not None:
                 return float(res)
@@ -1372,7 +1385,7 @@ class Redis(RedisBase):
             bins = len(vals_and_scores) - 1
             i = 0
             while i < bins:
-                res.append((vals_and_scores[i], float(vals_and_scores[i+1])))
+                res.append((vals_and_scores[i], float(vals_and_scores[i + 1])))
                 i += 2
             return res
 
@@ -1380,9 +1393,13 @@ class Redis(RedisBase):
             dfr.addCallback(post_process)
         return dfr
 
+
 class HiRedisProtocol(Redis):
-    """ A subclass of the Redis protocol that uses the hiredis library for parsing. """
-    def __init__(self, db=None, password=None, charset='utf8', errors='strict'):
+    """A subclass of the Redis protocol that uses the hiredis library for
+    parsing.
+    """
+    def __init__(self, db=None, password=None, charset='utf8',
+                 errors='strict'):
         Redis.__init__(self, db, password, charset, errors)
         self._reader = hiredis.Reader(protocolError=InvalidData,
                                       replyError=ResponseError)
@@ -1529,6 +1546,7 @@ class RedisClientFactory(protocol.ReconnectingClientFactory):
 
     def buildProtocol(self, addr):
         from twisted.internet import reactor
+
         def fire(res):
             self.deferred.callback(self.client)
             self.deferred = defer.Deferred()
@@ -1541,4 +1559,3 @@ class RedisClientFactory(protocol.ReconnectingClientFactory):
 
 class RedisSubscriberFactory(RedisClientFactory):
     protocol = RedisSubscriber
-
