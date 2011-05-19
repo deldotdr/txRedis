@@ -724,6 +724,15 @@ class Redis(RedisBase):
         self._send('RPOP' if tail else 'LPOP', key)
         return self.getResponse()
 
+    def brpop(self, keys, timeout=30):
+        """
+        Issue a BRPOP - blockling list pop from the right.
+        @param keys is a list of one or more Redis keys
+        @param timeout max number of seconds to block for
+        """
+        self._send('BRPOP', *(list(keys) + [str(timeout)]))
+        return self.getResponse()
+
     def bpop(self, keys, tail=False, timeout=30):
         """
         @param keys a list of one or more Redis keys of non-empty list(s)
