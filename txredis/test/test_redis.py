@@ -1514,6 +1514,20 @@ class SortedSet(CommandsTestBase):
         ex = [('b', 4.252), ('d', 10.425)]
 
     @defer.inlineCallbacks
+    def test_zscore_and_zrange_nonexistant(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('a')
+        a = yield r.zscore('a', 'somekey')
+        t(a, None)
+
+        yield r.delete('a')
+        a = yield r.zrange('a', 0, -1, withscores=True)
+        t(a, [])
+
+
+    @defer.inlineCallbacks
     def test_zaggregatestore(self):
         r = self.redis
         t = self.assertEqual
@@ -1618,25 +1632,6 @@ class BlockingListOperartions(CommandsTestBase):
         yield d
         r2.transport.loseConnection()
 
-
-# if hiredis and its python wrappers are installed, test them too
-try:
-    import hiredis
-    from txredis.protocol import HiRedisProtocol
-    class HiRedisGeneral(General):
-        protcol = HiRedisProtocol
-    class HiRedisStrings(Strings):
-        protocol = HiRedisProtocol
-    class HiRedisLists(Lists):
-        protocol = HiRedisProtocol
-    class HiRedisHash(Hash):
-        protocol = HiRedisProtocol
-    class HiRedisSortedSet(SortedSet):
-        protocol = HiRedisProtocol
-    class HiRedisSets(Sets):
-        protocol = HiRedisProtocol
-except ImportError:
-    pass
 
 class Network(unittest.TestCase):
 

@@ -121,13 +121,12 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     def dataReceived(self, data):
         """Receive data.
 
-        Spec: http://code.google.com/p/redis/wiki/ProtocolSpecification
-
+        Spec: http://redis.io/topics/protocol
         """
+        self.resetTimeout()
         self._buffer = self._buffer + data
 
         while self._buffer:
-            self.resetTimeout()
 
             # if we're expecting bulk data, read that many bytes
             if self._bulk_length is not None:
@@ -723,6 +722,15 @@ class Redis(RedisBase):
         value 'nil' is returned.
         """
         self._send('RPOP' if tail else 'LPOP', key)
+        return self.getResponse()
+
+    def brpop(self, keys, timeout=30):
+        """
+        Issue a BRPOP - blockling list pop from the right.
+        @param keys is a list of one or more Redis keys
+        @param timeout max number of seconds to block for
+        """
+        self._send('BRPOP', *(list(keys) + [str(timeout)]))
         return self.getResponse()
 
     def bpop(self, keys, tail=False, timeout=30):
@@ -1340,13 +1348,22 @@ class Redis(RedisBase):
     def zrevrange(self, key, start, end, withscores=False):
         return self.zrange(key, start, end, withscores, reverse=True)
 
+    def zrevrank(self, key, member):
+        self._send('ZREVRANK', key, member)
+        return self.getResponse()
+
     def zcard(self, key):
         self._send('ZCARD', key)
         return self.getResponse()
 
     def zscore(self, key, element):
         self._send('ZSCORE', key, element)
-        return self.getResponse().addCallback(float)
+        def post_process(res):
+            if res is not None:
+                return float(res)
+            else:
+                return res
+        return self.getResponse().addCallback(post_process)
 
     def zrangebyscore(self, key, min='-inf', max='+inf', offset=None,
                       count=None, withscores=False):
