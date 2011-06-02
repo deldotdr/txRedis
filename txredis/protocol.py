@@ -542,6 +542,13 @@ class Redis(RedisBase):
         self._send('EXPIRE', key, time)
         return self.getResponse()
 
+    def expireat(self, key, time):
+        """
+        Set the expiration for a key as a UNIX timestamp
+        """
+        self._send('EXPIREAT', key, time)
+        return self.getResponse()
+
     def ttl(self, key):
         """
         """
