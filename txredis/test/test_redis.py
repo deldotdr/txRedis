@@ -650,6 +650,15 @@ class Lists(CommandsTestBase):
         ex = 'OK'
         t(a, ex)
 
+        yield r.delete('l')
+        a = yield r.push('l', 'a', no_create=True)
+        ex = 0
+        t(a, ex)
+
+        a = yield r.push('l', 'a', tail=True, no_create=True)
+        ex = 0
+        t(a, ex)
+
     @defer.inlineCallbacks
     def test_llen(self):
         r = self.redis
