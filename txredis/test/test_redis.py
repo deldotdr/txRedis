@@ -454,6 +454,18 @@ class General(CommandsTestBase):
         d.addCallback(step1)
         return d
 
+    @defer.inlineCallbacks
+    def test_watch(self):
+        r = yield self.redis.watch('foo')
+        self.assertEqual(r, 'OK')
+
+    @defer.inlineCallbacks
+    def test_unwatch(self):
+        yield self.redis.watch('foo')
+        r = yield self.redis.unwatch()
+        self.assertEqual(r, 'OK')
+
+
 class Strings(CommandsTestBase):
     """Test commands that operate on string values.
     """

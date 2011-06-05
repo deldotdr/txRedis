@@ -579,11 +579,11 @@ class Redis(RedisBase):
         self._send('WATCH', *keys)
         return self.getResponse()
 
-    def unwatch(self, *keys):
+    def unwatch(self):
         """
         Forget about all watched keys
         """
-        self._send('UNWATCH', *keys)
+        self._send('UNWATCH')
         return self.getResponse()
 
 
