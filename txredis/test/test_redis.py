@@ -118,6 +118,15 @@ class General(CommandsTestBase):
         a = yield r.delete('a')
         ex = 0
         t(a, ex)
+        a = yield r.set('a', 'a')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.set('b', 'b')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.delete('a', 'b')
+        ex = 2
+        t(a, ex)
 
     @defer.inlineCallbacks
     def test_get_type(self):
