@@ -114,8 +114,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         self._buffer = ''
         self._bulk_length = None
         self._disconnected = False
-        self._multi_bulk_length = None
-        self._multi_bulk_reply = []
+        self._multi_bulk_stack = [] # [[length-remaining, [replies] | None]]
         self._request_queue = deque()
 
     def dataReceived(self, data):
@@ -176,18 +175,20 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             elif reply_type == self.MULTI_BULK:
                 # reply_data will contain the # of bulks we're about to get
                 try:
-                    self._multi_bulk_length = int(reply_data)
+                    multi_bulk_length = int(reply_data)
                 except ValueError:
                     r = InvalidResponse("Cannot convert data '%s' to integer"
                                         % reply_data)
                     self.responseReceived(r)
                     return
-                if self._multi_bulk_length == -1:
-                    self._multi_bulk_reply = None
+                if multi_bulk_length == -1:
+                    self._multi_bulk_stack.append([-1, None])
                     self.multiBulkDataReceived()
                     return
-                elif self._multi_bulk_length == 0:
-                    self.multiBulkDataReceived()
+                else: 
+                    self._multi_bulk_stack.append([multi_bulk_length, []])
+                    if multi_bulk_length == 0:
+                        self.multiBulkDataReceived()
 
     def failRequests(self, reason):
         while self._request_queue:
@@ -251,9 +252,10 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         self.responseReceived(reply)
 
     def handleMultiBulkElement(self, element):
-        self._multi_bulk_reply.append(element)
-        self._multi_bulk_length = self._multi_bulk_length - 1
-        if self._multi_bulk_length == 0:
+        top = self._multi_bulk_stack[-1]
+        top[1].append(element)
+        top[0] -= 1
+        if top[0] == 0:
             self.multiBulkDataReceived()
 
     def integerReceived(self, data):
@@ -263,7 +265,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         except ValueError:
             reply = InvalidResponse("Cannot convert data '%s' to integer"
                                     % data)
-        if self._multi_bulk_length > 0:
+        if self._multi_bulk_stack:
             self.handleMultiBulkElement(reply)
             return
 
@@ -278,13 +280,14 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         """Multi bulk response received.
 
         The bulks making up this response have been collected in
-        self._multi_bulk_reply.
+        the last entry in self._multi_bulk_stack.
 
         """
-        reply = self._multi_bulk_reply
-        self._multi_bulk_reply = []
-        self._multi_bulk_length = None
-        self.handleCompleteMultiBulkData(reply)
+        reply = self._multi_bulk_stack.pop(-1)[1]
+        if self._multi_bulk_stack:
+            self.handleMultiBulkElement(reply)
+        else:
+            self.handleCompleteMultiBulkData(reply)
 
     def handleCompleteMultiBulkData(self, reply):
         self.responseReceived(reply)
@@ -296,7 +299,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         provide the reply to the waiting request.
 
         """
-        if self._multi_bulk_length > 0:
+        if self._multi_bulk_stack:
             self.handleMultiBulkElement(reply)
         elif self._request_queue:
             self._request_queue.popleft().callback(reply)
