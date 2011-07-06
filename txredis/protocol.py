@@ -756,6 +756,17 @@ class Redis(RedisBase):
         self._send('BRPOP', *(list(keys) + [str(timeout)]))
         return self.getResponse()
 
+    def brpoplpush(self, source, destination, timeout=30):
+        """
+        Blocking variant of RPOPLPUSH.
+        @param source - Source list.
+        @param destination - Destination list
+        @param timeout - max number of seconds to block for (a
+                        timeout of 0 will block indefinitely)
+        """
+        self._send('BRPOPLPUSH', source, destination, str(timeout))
+        return self.getResponse()
+
     def bpop(self, keys, tail=False, timeout=30):
         """
         @param keys a list of one or more Redis keys of non-empty list(s)
