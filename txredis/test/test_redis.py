@@ -225,6 +225,21 @@ class General(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_expireat(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.set('a', 1)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.expireat('a', int(time.time() + 10))
+        ex = 1
+        t(a, ex)
+        a = yield r.expireat('zzzzz', int(time.time() + 10))
+        ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_setex(self):
         r = self.redis
         t = self.assertEqual
