@@ -621,6 +621,8 @@ class Redis(RedisBase):
     # List Commands:
     # RPUSH
     # LPUSH
+    # RPUSHX
+    # LPUSHX
     # LLEN
     # LRANGE
     # LTRIM
@@ -633,22 +635,29 @@ class Redis(RedisBase):
     # BRPOP
     # RPOPLPUSH
     # SORT
-    def push(self, key, value, tail=False):
+    def push(self, key, value, tail=False, no_create=False):
         """
         @param key Redis key
         @param value String element of list
 
-        Add the string value to the head (LPUSH) or tail (RPUSH) of the
-        list stored at key key. If the key does not exist an empty list is
-        created just before the append operation. If the key exists but is
-        not a List an error is returned.
+        Add the string value to the head (LPUSH/LPUSHX) or tail
+        (RPUSH/RPUSHX) of the list stored at key key. If the key does
+        not exist and no_create is False (the default) an empty list
+        is created just before the append operation. If the key exists
+        but is not a List an error is returned.
 
         @note Time complexity: O(1)
         """
         if tail:
-            return self.rpush(key, value)
+            if no_create:
+                return self.rpushx(key, value)
+            else:
+                return self.rpush(key, value)
         else:
-            return self.lpush(key, value)
+            if no_create:
+                return self.lpushx(key, value)
+            else:
+                return self.lpush(key, value)
 
     def lpush(self, key, value):
         self._send('LPUSH', key, value)
@@ -656,6 +665,14 @@ class Redis(RedisBase):
 
     def rpush(self, key, value):
         self._send('RPUSH', key, value)
+        return self.getResponse()
+
+    def lpushx(self, key, value):
+        self._send('LPUSHX', key, value)
+        return self.getResponse()
+
+    def rpushx(self, key, value):
+        self._send('RPUSHX', key, value)
         return self.getResponse()
 
     def llen(self, key):
