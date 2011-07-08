@@ -503,11 +503,11 @@ class Redis(RedisBase):
         self._send('EXISTS', key)
         return self.getResponse()
 
-    def delete(self, key):
+    def delete(self, key, *keys):
         """
-        Delete a key
+        Delete one or more keys
         """
-        self._send('DEL', key)
+        self._send('DEL', key, *keys)
         return self.getResponse()
 
     def get_type(self, key):
