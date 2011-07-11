@@ -1,4 +1,3 @@
-
 import time
 
 from twisted.internet import error
@@ -279,6 +278,9 @@ class General(CommandsTestBase):
 
         a = yield r.mset({'ma': 1, 'mb': 2}, preserve=True)
         ex = 0
+
+        a = yield r.msetnx({'ma': 1, 'mb': 2})
+        ex = 0
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -517,6 +519,9 @@ class Strings(CommandsTestBase):
         self.assertEqual(a, 'OK')
 
         a = yield self.redis.set('b', 'xxx', preserve=True)
+        self.assertEqual(a, 0)
+
+        a = yield self.redis.setnx('b', 'xxx')
         self.assertEqual(a, 0)
 
         a = yield self.redis.get('b')

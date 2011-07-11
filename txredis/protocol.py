@@ -188,7 +188,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
                     self._multi_bulk_stack.append([-1, None])
                     self.multiBulkDataReceived()
                     return
-                else: 
+                else:
                     self._multi_bulk_stack.append([multi_bulk_length, []])
                     if multi_bulk_length == 0:
                         self.multiBulkDataReceived()
@@ -432,7 +432,7 @@ class Redis(RedisBase):
         if getset:
             command = 'GETSET'
         elif preserve:
-            command = 'SETNX'
+            return self.setnx(key, value)
         else:
             command = 'SET'
 
@@ -440,6 +440,32 @@ class Redis(RedisBase):
             self._send('SETEX', key, expire, value)
         else:
             self._send(command, key, value)
+        return self.getResponse()
+
+    def setnx(self, key, value):
+        """
+        Set key to hold string value if key does not exist. In that case, it is
+        equal to SET. When key already holds a value, no operation is
+        performed. SETNX is short for "SET if Not eXists".
+        """
+        self._send('SETNX', key, value)
+        return self.getResponse()
+
+    def msetnx(self, mapping):
+        """
+        Sets the given keys to their respective values. MSETNX will not perform
+        any operation at all even if just a single key already exists.
+
+        Because of this semantic MSETNX can be used in order to set different
+        keys representing different fields of an unique logic object in a way
+        that ensures that either all the fields or none at all are set.
+
+        MSETNX is atomic, so all given keys are set at once. It is not possible
+        for clients to see that some of the keys were updated while others are
+        unchanged.
+        """
+
+        self._send('msetnx', *list(chain(*mapping.iteritems())))
         return self.getResponse()
 
     def mset(self, mapping, preserve=False):
