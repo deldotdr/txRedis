@@ -795,6 +795,14 @@ class Redis(RedisBase):
         self._send('LINDEX', key, index)
         return self.getResponse()
 
+    def rpop(self, key):
+        self._send('RPOP', key)
+        return self.getResponse()
+
+    def lpop(self, key):
+        self._send('LPOP', key)
+        return self.getResponse()
+
     def pop(self, key, tail=False):
         """
         @param key Redis key
@@ -806,8 +814,7 @@ class Redis(RedisBase):
         If the key does not exist or the list is already empty the special
         value 'nil' is returned.
         """
-        self._send('RPOP' if tail else 'LPOP', key)
-        return self.getResponse()
+        return self.rpop(key) if tail else self.lpop(key)
 
     def brpop(self, keys, timeout=30):
         """
