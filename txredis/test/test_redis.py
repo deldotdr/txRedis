@@ -128,6 +128,21 @@ class General(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_get_object(self):
+        r = self.redis
+        t = self.assertEqual
+        a = yield r.set('obj', 1)
+        ex = 'OK'
+        t(a, ex)
+
+        a = yield r.get_object('obj', idletime=True)
+        self.assertEqual(type(a), int)
+
+        a = yield r.get_object('obj', encoding=True)
+        ex = 'int'
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_get_type(self):
         r = self.redis
         t = self.assertEqual

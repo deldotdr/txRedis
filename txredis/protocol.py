@@ -97,6 +97,8 @@ class InvalidResponse(RedisError):
 class InvalidData(RedisError):
     pass
 
+class InvalidCommand(RedisError):
+    pass
 
 class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     """The main Redis client."""
@@ -553,9 +555,30 @@ class Redis(RedisBase):
         Determine the type stored at key
         """
         self._send('TYPE', key)
-        res = self.getResponse()
-        # return None if res == 'none' else res
-        return res
+        return self.getResponse()
+
+    def get_object(self, key, refcount=False, encoding=False, idletime=False):
+        """
+        Inspect the internals of Redis objects.
+        @param key : The Redis key you want to inspect
+        @param refcount : Returns the number of refereces of the value
+                          associated with the specified key.
+        @param encoding : Returns the kind of internal representation for value.
+        @param idletime Returns the number of seconds since the object stored
+                        at the specified key is idle. (Currently the actual
+                        resolution is 10 seconds.)
+        """
+        subcommand = ''
+        if idletime:
+            subcommand = 'IDLETIME'
+        elif encoding:
+            subcommand = 'ENCODING'
+        elif refcount:
+            subcommand = 'REFCOUNT'
+        if not subcommand:
+            raise InvalidCommand('Need a subcommand')
+        self._send('OBJECT', subcommand, key)
+        return self.getResponse()
 
     # Commands operating on the key space
     def keys(self, pattern):
