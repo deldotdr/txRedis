@@ -716,6 +716,23 @@ class Lists(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_push_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('l')
+        yield r.lpush('l', 'a', 'b', 'c', 'd')
+        a = yield r.llen('l')
+        ex = 4
+        t(a, ex)
+
+        yield r.rpush('l', 't', 'u', 'v', 'w')
+        a = yield r.llen('l')
+        ex = 8
+        t(a, ex)
+
+
+    @defer.inlineCallbacks
     def test_llen(self):
         r = self.redis
         t = self.assertEqual
@@ -979,6 +996,18 @@ class Sets(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_sadd_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('s')
+        a = yield r.sadd('s', 'a', 'b', 'c', 'd')
+        ex = 4
+        a = yield r.scard('s')
+        ex = 4
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_sdiff(self):
         r = self.redis
         t = self.assertEqual
@@ -1044,6 +1073,22 @@ class Sets(CommandsTestBase):
         t(a, ex)
         a = yield r.sismember('s', 'b')
         ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_srem_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('s')
+        a = yield r.sadd('s', 'a', 'b', 'c', 'd')
+        ex = 4
+        t(a, ex)
+        a = yield r.srem('s', 'a', 'b')
+        ex = 2
+        t(a, ex)
+        a = yield r.scard('s')
+        ex = 2
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -1379,6 +1424,21 @@ class Hash(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_hdel_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('d')
+        yield r.hset('d', 'a', 'vala')
+        yield r.hmset('d', {'a' : 'vala', 'b' : 'valb', 'c' : 'valc'})
+        a = yield r.hdel('d', 'a', 'b', 'c')
+        ex = 3
+        t(a, ex)
+        a = yield r.hgetall('d')
+        ex = {}
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_hincr(self):
         r = self.redis
         t = self.assertEqual
@@ -1608,6 +1668,44 @@ class SortedSet(CommandsTestBase):
         yield r.zadd('z', 'c', 3.0)
         a = yield r.zremrangebyrank('z', 0, 2)
         ex = 3
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_add_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        yield r.zadd('z', 'a', 1.0)
+        a = yield r.zcard('z')
+        ex = 1
+        t(a, ex)
+
+        # NB. note how for multiple argument it's score then val
+        yield r.zadd('z', 2.0, 'b', 3.0, 'c')
+        a = yield r.zcard('z')
+        ex = 3
+
+    @defer.inlineCallbacks
+    def test_zrem_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        yield r.zadd('z', 'a', 1.0)
+        a = yield r.zcard('z')
+        ex = 1
+        t(a, ex)
+
+        # NB. note how for multiple argument it's score then val
+        yield r.zadd('z', 2.0, 'b', 3.0, 'c')
+        a = yield r.zcard('z')
+        ex = 3
+        t(a, ex)
+
+        yield r.zrem('z', 'a', 'b', 'c')
+        a = yield r.zcard('z')
+        ex = 0
         t(a, ex)
 
     @defer.inlineCallbacks

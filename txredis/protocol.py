@@ -720,12 +720,34 @@ class Redis(RedisBase):
             else:
                 return self.lpush(key, value)
 
-    def lpush(self, key, value):
-        self._send('LPUSH', key, value)
+    def lpush(self, key, *values, **kwargs):
+        """
+        Add string to head of list.
+        @param key : List key
+        @param values : Sequence of values to push
+        @param value : For backwards compatibility, a single value.
+        """
+        if not kwargs:
+            self._send('LPUSH', key, *values)
+        elif 'value' in kwargs:
+            self._send('LPUSH', key, kwargs['value'])
+        else:
+            raise InvalidCommand('Need arguments for LPUSH')
         return self.getResponse()
 
-    def rpush(self, key, value):
-        self._send('RPUSH', key, value)
+    def rpush(self, key, *values, **kwargs):
+        """
+        Add string to end of list.
+        @param key : List key
+        @param values : Sequence of values to push
+        @param value : For backwards compatibility, a single value.
+        """
+        if not kwargs:
+            self._send('RPUSH', key, *values)
+        elif 'value' in kwargs:
+            self._send('RPUSH', key, kwargs['value'])
+        else:
+            raise InvalidCommand('Need arguments for RPUSH')
         return self.getResponse()
 
     def lpushx(self, key, value):
@@ -1014,18 +1036,34 @@ class Redis(RedisBase):
             return set(res)
         return res
 
-    def sadd(self, key, value):
+    def sadd(self, key, *values, **kwargs):
         """
         Add a member to a set
+        @param key : SET key to add values to.
+        @param values : sequence of values to add to set
+        @param value : For backwards compatibility, add one value.
         """
-        self._send('SADD', key, value)
+        if not kwargs:
+            self._send('SADD', key, *values)
+        elif 'value' in kwargs:
+            self._send('SADD', key, kwargs['value'])
+        else:
+            raise InvalidCommand('Need arguments for SADD')
         return self.getResponse()
 
-    def srem(self, key, value):
+    def srem(self, key, *values, **kwargs):
         """
         Remove a member from a set
+        @param key : Set key
+        @param values : Sequence of values to remove
+        @param value : For backwards compatibility, single value to remove.
         """
-        self._send('SREM', key, value)
+        if not kwargs:
+            self._send('SREM', key, *values)
+        elif 'value' in kwargs:
+            self._send('SREM', key, kwargs['value'])
+        else:
+            raise InvalidCommand('Need arguments for SREM')
         return self.getResponse()
 
     def spop(self, key):
@@ -1373,11 +1411,19 @@ class Redis(RedisBase):
         self._send('HEXISTS', key, field)
         return self.getResponse()
 
-    def hdel(self, key, field):
+    def hdel(self, key, *fields, **kwargs):
         """
         Removes field from the hash stored at key.
+        @param key : Hash key
+        @param fields : Sequence of fields to remvoe
+        @param field : For backwards compatibility. Single field to remove.
         """
-        self._send('HDEL', key, field)
+        if not kwargs:
+            self._send('HDEL', key, *fields)
+        elif 'field' in kwargs:
+            self._send('HDEL', key, field)
+        else:
+            raise InvalidCommand('Need arguments for HDEL')
         return self.getResponse()
     hdelete = hdel  # backwards compat for older txredis
 
@@ -1428,18 +1474,42 @@ class Redis(RedisBase):
     # ZREMRANGEBYRANK
     # ZREMRANGEBYSCORE
     # ZUNIONSTORE / ZINTERSTORE
-    def zadd(self, key, member, score):
+    def zadd(self, key, *item_tuples, **kwargs):
         """
-        Add a member to a sorted set, or update its score if it already exists
+        Add members to a sorted set, or update its score if it already exists
+        @param key : Sorted set key
+        @param item_tuples : Sequence of score, value pairs.
+                            e.g. zadd(key, score1, value1, score2, value2)
+        @param member : For backwards compatibility, member name.
+        @param score : For backwards compatibility, score.
+
+        NOTE: if there are only two arguments, the order is interpreted as (value, score)
+              for backwards compatibility reasons.
         """
-        self._send('ZADD', key, score, member)
+        if not kwargs and len(item_tuples) == 2 and isinstance(item_tuples[0], basestring):
+            self._send('ZADD', key, item_tuples[1], item_tuples[0])
+        elif not kwargs:
+            self._send('ZADD', key, *item_tuples)
+        elif 'member' in kwargs and 'score' in kwargs:
+            score, member = item_tuples
+            self._send('ZADD', key, kwargs['score'], kwargs['member'])
+        else:
+            raise InvalidCommand('Need arguments for ZADD')
         return self.getResponse()
 
-    def zrem(self, key, member):
+    def zrem(self, key, *members, **kwargs):
         """
-        Remove a member from a sorted set
+        Remove members from a sorted set
+        @param key : Sorted set key
+        @param members : Sequeunce of members to remove
+        @param member : For backwards compatibility - if specified remove one member.
         """
-        self._send('ZREM', key, member)
+        if not kwargs:
+            self._send('ZREM', key, *members)
+        elif 'member' in kwargs:
+            self._send('ZREM', key, kwargs['member'])
+        else:
+            raise InvalidCommand('Need arguments for ZREM')
         return self.getResponse()
 
     def zremrangebyrank(self, key, start, end):
