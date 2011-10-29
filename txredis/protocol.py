@@ -77,6 +77,7 @@ try:
 except ImportError:
     pass
 
+
 class RedisError(Exception):
     pass
 
@@ -96,6 +97,8 @@ class InvalidResponse(RedisError):
 class InvalidData(RedisError):
     pass
 
+class InvalidCommand(RedisError):
+    pass
 
 class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     """The main Redis client."""
@@ -106,7 +109,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     BULK = "$"
     MULTI_BULK = "*"
 
-    def __init__(self, db=None, password=None, charset='utf8', errors='strict'):
+    def __init__(self, db=None, password=None, charset='utf8',
+                 errors='strict'):
         self.charset = charset
         self.db = db if db is not None else 0
         self.password = password
@@ -114,8 +118,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         self._buffer = ''
         self._bulk_length = None
         self._disconnected = False
-        self._multi_bulk_length = None
-        self._multi_bulk_reply = []
+        self._multi_bulk_stack = deque() # [[length-remaining, [replies] | None]]
         self._request_queue = deque()
 
     def dataReceived(self, data):
@@ -131,10 +134,11 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             # if we're expecting bulk data, read that many bytes
             if self._bulk_length is not None:
                 # wait until there's enough data in the buffer
-                if len(self._buffer) < self._bulk_length + 2: # /r/n
+                # we add 2 to _bulk_length to account for \r\n
+                if len(self._buffer) < self._bulk_length + 2:
                     return
                 data = self._buffer[:self._bulk_length]
-                self._buffer = self._buffer[self._bulk_length+2:] # 2 for /r/n
+                self._buffer = self._buffer[self._bulk_length + 2:]
                 self.bulkDataReceived(data)
                 continue
 
@@ -176,18 +180,20 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             elif reply_type == self.MULTI_BULK:
                 # reply_data will contain the # of bulks we're about to get
                 try:
-                    self._multi_bulk_length = int(reply_data)
+                    multi_bulk_length = int(reply_data)
                 except ValueError:
                     r = InvalidResponse("Cannot convert data '%s' to integer"
                                         % reply_data)
                     self.responseReceived(r)
                     return
-                if self._multi_bulk_length == -1:
-                    self._multi_bulk_reply = None
+                if multi_bulk_length == -1:
+                    self._multi_bulk_stack.append([-1, None])
                     self.multiBulkDataReceived()
                     return
-                elif self._multi_bulk_length == 0:
-                    self.multiBulkDataReceived()
+                else:
+                    self._multi_bulk_stack.append([multi_bulk_length, []])
+                    if multi_bulk_length == 0:
+                        self.multiBulkDataReceived()
 
     def failRequests(self, reason):
         while self._request_queue:
@@ -200,11 +206,11 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
         # if we have a password set, make sure we auth
         if self.password:
-            d.addCallback(lambda _res : self.auth(self.password))
+            d.addCallback(lambda _res: self.auth(self.password))
 
         # select the db passsed in
         if self.db:
-            d.addCallback(lambda _res : self.select(self.db))
+            d.addCallback(lambda _res: self.select(self.db))
 
         def done_connecting(_res):
             # set our state as soon as we're properly connected
@@ -238,22 +244,24 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             # properly errback this reply
             self._request_queue.popleft().errback(reply)
         else:
-            # we should have a request queue - if not, just raise this exception
+            # we should have a request queue. if not, just raise this exception
             raise reply
 
     def singleLineReceived(self, data):
         """Single line response received."""
         if data == 'none':
-            reply = None # should this happen here in the client?
+            # should this happen here in the client?
+            reply = None
         else:
             reply = data
 
         self.responseReceived(reply)
 
     def handleMultiBulkElement(self, element):
-        self._multi_bulk_reply.append(element)
-        self._multi_bulk_length = self._multi_bulk_length - 1
-        if self._multi_bulk_length == 0:
+        top = self._multi_bulk_stack[-1]
+        top[1].append(element)
+        top[0] -= 1
+        if top[0] == 0:
             self.multiBulkDataReceived()
 
     def integerReceived(self, data):
@@ -263,7 +271,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         except ValueError:
             reply = InvalidResponse("Cannot convert data '%s' to integer"
                                     % data)
-        if self._multi_bulk_length > 0:
+        if self._multi_bulk_stack:
             self.handleMultiBulkElement(reply)
             return
 
@@ -278,13 +286,14 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         """Multi bulk response received.
 
         The bulks making up this response have been collected in
-        self._multi_bulk_reply.
+        the last entry in self._multi_bulk_stack.
 
         """
-        reply = self._multi_bulk_reply
-        self._multi_bulk_reply = []
-        self._multi_bulk_length = None
-        self.handleCompleteMultiBulkData(reply)
+        reply = self._multi_bulk_stack.pop()[1]
+        if self._multi_bulk_stack:
+            self.handleMultiBulkElement(reply)
+        else:
+            self.handleCompleteMultiBulkData(reply)
 
     def handleCompleteMultiBulkData(self, reply):
         self.responseReceived(reply)
@@ -296,7 +305,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         provide the reply to the waiting request.
 
         """
-        if self._multi_bulk_length > 0:
+        if self._multi_bulk_stack:
             self.handleMultiBulkElement(reply)
         elif self._request_queue:
             self._request_queue.popleft().callback(reply)
@@ -325,7 +334,11 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         return str(s)
 
     def _send(self, *args):
-        """Encode and send a request using the 'unified request protocol' (aka multi-bulk)"""
+        """Encode and send a request
+
+        Uses the 'unified request protocol' (aka multi-bulk)
+
+        """
         cmds = []
         for i in args:
             v = self._encode(i)
@@ -391,6 +404,7 @@ class Redis(RedisBase):
         Get configuration for Redis at runtime.
         """
         self._send('CONFIG', 'GET', pattern)
+
         def post_process(values):
             # transform into dict
             res = {}
@@ -411,6 +425,7 @@ class Redis(RedisBase):
     # Commands operating on string values
     def set(self, key, value, preserve=False, getset=False, expire=None):
         """
+        Set the string value of a key
         """
         # The following will raise an error for unicode values that can't be
         # encoded to ascii. We could probably add an 'encoding' arg to init,
@@ -419,7 +434,7 @@ class Redis(RedisBase):
         if getset:
             command = 'GETSET'
         elif preserve:
-            command = 'SETNX'
+            return self.setnx(key, value)
         else:
             command = 'SET'
 
@@ -429,7 +444,36 @@ class Redis(RedisBase):
             self._send(command, key, value)
         return self.getResponse()
 
+    def setnx(self, key, value):
+        """
+        Set key to hold string value if key does not exist. In that case, it is
+        equal to SET. When key already holds a value, no operation is
+        performed. SETNX is short for "SET if Not eXists".
+        """
+        self._send('SETNX', key, value)
+        return self.getResponse()
+
+    def msetnx(self, mapping):
+        """
+        Sets the given keys to their respective values. MSETNX will not perform
+        any operation at all even if just a single key already exists.
+
+        Because of this semantic MSETNX can be used in order to set different
+        keys representing different fields of an unique logic object in a way
+        that ensures that either all the fields or none at all are set.
+
+        MSETNX is atomic, so all given keys are set at once. It is not possible
+        for clients to see that some of the keys were updated while others are
+        unchanged.
+        """
+
+        self._send('msetnx', *list(chain(*mapping.iteritems())))
+        return self.getResponse()
+
     def mset(self, mapping, preserve=False):
+        """
+        Set multiple keys to multiple values
+        """
         if preserve:
             command = 'MSETNX'
         else:
@@ -438,33 +482,43 @@ class Redis(RedisBase):
         return self.getResponse()
 
     def append(self, key, value):
+        """
+        Append a value to a key
+        """
         self._send('APPEND', key, value)
         return self.getResponse()
 
     def getrange(self, key, start, end):
+        """
+        Get a substring of the string stored at a key
+        """
         self._send('GETRANGE', key, start, end)
         return self.getResponse()
     substr = getrange
 
     def get(self, key):
         """
+        Get the value of a key
         """
         self._send('GET', key)
         return self.getResponse()
 
     def getset(self, key, value):
         """
+        Set the string value of a key and return its old value
         """
         return self.set(key, value, getset=True)
 
     def mget(self, *args):
         """
+        Get the values of all the given keys
         """
         self._send('MGET', *args)
         return self.getResponse()
 
     def incr(self, key, amount=1):
         """
+        Increment the integer value of a key by the given amount (default 1)
         """
         if amount == 1:
             self._send('INCR', key)
@@ -474,6 +528,7 @@ class Redis(RedisBase):
 
     def decr(self, key, amount=1):
         """
+        Decrement the integer value of a key by the given amount (default 1)
         """
         if amount == 1:
             self._send('DECR', key)
@@ -483,33 +538,59 @@ class Redis(RedisBase):
 
     def exists(self, key):
         """
+        Determine if a key exists
         """
         self._send('EXISTS', key)
         return self.getResponse()
 
-    def delete(self, key):
+    def delete(self, key, *keys):
         """
+        Delete one or more keys
         """
-        self._send('DEL', key)
+        self._send('DEL', key, *keys)
         return self.getResponse()
 
     def get_type(self, key):
         """
+        Determine the type stored at key
         """
         self._send('TYPE', key)
-        res = self.getResponse()
-        # return None if res == 'none' else res
-        return res
+        return self.getResponse()
+
+    def get_object(self, key, refcount=False, encoding=False, idletime=False):
+        """
+        Inspect the internals of Redis objects.
+        @param key : The Redis key you want to inspect
+        @param refcount : Returns the number of refereces of the value
+                          associated with the specified key.
+        @param encoding : Returns the kind of internal representation for value.
+        @param idletime Returns the number of seconds since the object stored
+                        at the specified key is idle. (Currently the actual
+                        resolution is 10 seconds.)
+        """
+        subcommand = ''
+        if idletime:
+            subcommand = 'IDLETIME'
+        elif encoding:
+            subcommand = 'ENCODING'
+        elif refcount:
+            subcommand = 'REFCOUNT'
+        if not subcommand:
+            raise InvalidCommand('Need a subcommand')
+        self._send('OBJECT', subcommand, key)
+        return self.getResponse()
 
     # Commands operating on the key space
     def keys(self, pattern):
         """
+        Find all keys matching the given pattern
         """
         self._send('KEYS', pattern)
 
         def post_process(res):
             if res is not None:
-                res.sort()# XXX is sort ok?
+                # XXX is sort ok?
+                res.sort()
             else:
                 res = []
             return res
@@ -518,6 +599,7 @@ class Redis(RedisBase):
 
     def randomkey(self):
         """
+        Return a random key from the keyspace
         """
         #raise NotImplementedError("Implemented but buggy, do not use.")
         self._send('RANDOMKEY')
@@ -525,9 +607,10 @@ class Redis(RedisBase):
 
     def rename(self, src, dst, preserve=False):
         """
+        Rename a key
         """
         self._send('RENAMENX' if preserve else 'RENAME', src, dst)
-        return self.getResponse() #.strip()
+        return self.getResponse()
 
     def dbsize(self):
         """
@@ -538,12 +621,21 @@ class Redis(RedisBase):
 
     def expire(self, key, time):
         """
+        Set a key's time to live in seconds
         """
         self._send('EXPIRE', key, time)
         return self.getResponse()
 
+    def expireat(self, key, time):
+        """
+        Set the expiration for a key as a UNIX timestamp
+        """
+        self._send('EXPIREAT', key, time)
+        return self.getResponse()
+
     def ttl(self, key):
         """
+        Get the time to live for a key
         """
         self._send('TTL', key)
         return self.getResponse()
@@ -579,18 +671,19 @@ class Redis(RedisBase):
         self._send('WATCH', *keys)
         return self.getResponse()
 
-    def unwatch(self, *keys):
+    def unwatch(self):
         """
         Forget about all watched keys
         """
-        self._send('UNWATCH', *keys)
+        self._send('UNWATCH')
         return self.getResponse()
-
 
     # # # # # # # # #
     # List Commands:
     # RPUSH
     # LPUSH
+    # RPUSHX
+    # LPUSHX
     # LLEN
     # LRANGE
     # LTRIM
@@ -603,29 +696,66 @@ class Redis(RedisBase):
     # BRPOP
     # RPOPLPUSH
     # SORT
-    def push(self, key, value, tail=False):
+    def push(self, key, value, tail=False, no_create=False):
         """
         @param key Redis key
         @param value String element of list
 
-        Add the string value to the head (LPUSH) or tail (RPUSH) of the
-        list stored at key key. If the key does not exist an empty list is
-        created just before the append operation. If the key exists but is
-        not a List an error is returned.
+        Add the string value to the head (LPUSH/LPUSHX) or tail
+        (RPUSH/RPUSHX) of the list stored at key key. If the key does
+        not exist and no_create is False (the default) an empty list
+        is created just before the append operation. If the key exists
+        but is not a List an error is returned.
 
         @note Time complexity: O(1)
         """
         if tail:
-            return self.rpush(key, value)
+            if no_create:
+                return self.rpushx(key, value)
+            else:
+                return self.rpush(key, value)
         else:
-            return self.lpush(key, value)
+            if no_create:
+                return self.lpushx(key, value)
+            else:
+                return self.lpush(key, value)
 
-    def lpush(self, key, value):
-        self._send('LPUSH', key, value)
+    def lpush(self, key, *values, **kwargs):
+        """
+        Add string to head of list.
+        @param key : List key
+        @param values : Sequence of values to push
+        @param value : For backwards compatibility, a single value.
+        """
+        if not kwargs:
+            self._send('LPUSH', key, *values)
+        elif 'value' in kwargs:
+            self._send('LPUSH', key, kwargs['value'])
+        else:
+            raise InvalidCommand('Need arguments for LPUSH')
         return self.getResponse()
 
-    def rpush(self, key, value):
-        self._send('RPUSH', key, value)
+    def rpush(self, key, *values, **kwargs):
+        """
+        Add string to end of list.
+        @param key : List key
+        @param values : Sequence of values to push
+        @param value : For backwards compatibility, a single value.
+        """
+        if not kwargs:
+            self._send('RPUSH', key, *values)
+        elif 'value' in kwargs:
+            self._send('RPUSH', key, kwargs['value'])
+        else:
+            raise InvalidCommand('Need arguments for RPUSH')
+        return self.getResponse()
+
+    def lpushx(self, key, value):
+        self._send('LPUSHX', key, value)
+        return self.getResponse()
+
+    def rpushx(self, key, value):
+        self._send('RPUSHX', key, value)
         return self.getResponse()
 
     def llen(self, key):
@@ -710,6 +840,14 @@ class Redis(RedisBase):
         self._send('LINDEX', key, index)
         return self.getResponse()
 
+    def rpop(self, key):
+        self._send('RPOP', key)
+        return self.getResponse()
+
+    def lpop(self, key):
+        self._send('LPOP', key)
+        return self.getResponse()
+
     def pop(self, key, tail=False):
         """
         @param key Redis key
@@ -721,8 +859,7 @@ class Redis(RedisBase):
         If the key does not exist or the list is already empty the special
         value 'nil' is returned.
         """
-        self._send('RPOP' if tail else 'LPOP', key)
-        return self.getResponse()
+        return self.rpop(key) if tail else self.lpop(key)
 
     def brpop(self, keys, timeout=30):
         """
@@ -731,6 +868,17 @@ class Redis(RedisBase):
         @param timeout max number of seconds to block for
         """
         self._send('BRPOP', *(list(keys) + [str(timeout)]))
+        return self.getResponse()
+
+    def brpoplpush(self, source, destination, timeout=30):
+        """
+        Blocking variant of RPOPLPUSH.
+        @param source - Source list.
+        @param destination - Destination list
+        @param timeout - max number of seconds to block for (a
+                        timeout of 0 will block indefinitely)
+        """
+        self._send('BRPOPLPUSH', source, destination, str(timeout))
         return self.getResponse()
 
     def bpop(self, keys, tail=False, timeout=30):
@@ -786,7 +934,8 @@ class Redis(RedisBase):
         client values will return false or nil accordingly to the
         programming language used.
         """
-        self._send('BRPOP' if tail else 'BLPOP', *(list(keys) + [str(timeout)]))
+        cmd = 'BRPOP' if tail else 'BLPOP'
+        self._send(cmd, *(list(keys) + [str(timeout)]))
         return self.getResponse()
 
     def rpoplpush(self, srckey, dstkey):
@@ -887,75 +1036,114 @@ class Redis(RedisBase):
             return set(res)
         return res
 
-    def sadd(self, key, value):
+    def sadd(self, key, *values, **kwargs):
         """
+        Add a member to a set
+        @param key : SET key to add values to.
+        @param values : sequence of values to add to set
+        @param value : For backwards compatibility, add one value.
         """
-        self._send('SADD', key, value)
+        if not kwargs:
+            self._send('SADD', key, *values)
+        elif 'value' in kwargs:
+            self._send('SADD', key, kwargs['value'])
+        else:
+            raise InvalidCommand('Need arguments for SADD')
         return self.getResponse()
 
-    def srem(self, key, value):
+    def srem(self, key, *values, **kwargs):
         """
+        Remove a member from a set
+        @param key : Set key
+        @param values : Sequence of values to remove
+        @param value : For backwards compatibility, single value to remove.
         """
-        self._send('SREM', key, value)
+        if not kwargs:
+            self._send('SREM', key, *values)
+        elif 'value' in kwargs:
+            self._send('SREM', key, kwargs['value'])
+        else:
+            raise InvalidCommand('Need arguments for SREM')
         return self.getResponse()
 
     def spop(self, key):
+        """
+        Remove and return a random member from a set
+        """
         self._send('SPOP', key)
         return self.getResponse()
 
     def scard(self, key):
+        """
+        Get the number of members in a set
+        """
         self._send('SCARD', key)
         return self.getResponse()
 
     def sismember(self, key, value):
         """
+        Determine if a given value is a member of a set
         """
         self._send('SISMEMBER', key, value)
         return self.getResponse()
 
     def sdiff(self, *args):
+        """
+        Subtract multiple sets
+        """
         self._send('SDIFF', *args)
         return self.getResponse()
 
     def sdiffstore(self, dstkey, *args):
+        """
+        Subtract multiple sets and store the resulting set in dstkey
+        """
         self._send('SDIFFSTORE', dstkey, *args)
         return self.getResponse()
 
     def srandmember(self, key):
+        """
+        Get a random member from a set
+        """
         self._send('SRANDMEMBER', key)
         return self.getResponse()
 
     def sinter(self, *args):
         """
+        Intersect multiple sets
         """
         self._send('SINTER', *args)
         return self.getResponse().addCallback(self._list_to_set)
 
     def sinterstore(self, dest, *args):
         """
+        Intersect multiple sets and store the resulting set in dest
         """
         self._send('SINTERSTORE', dest, *args)
         return self.getResponse()
 
     def smembers(self, key):
         """
+        Get all the members in a set
         """
         self._send('SMEMBERS', key)
         return self.getResponse().addCallback(self._list_to_set)
 
     def smove(self, srckey, dstkey, member):
-        """ Move the specifided member from the set at srckey to the set at dstkey. """
+        """Move member from the set at srckey to the set at dstkey."""
         self._send('SMOVE', srckey, dstkey, member)
         return self.getResponse()
 
     def sunion(self, *args):
         """
+        Add multiple sets
         """
         self._send('SUNION', *args)
         return self.getResponse().addCallback(self._list_to_set)
 
     def sunionstore(self, dest, *args):
         """
+        Add multiple sets and store the resulting set in dest
         """
         self._send('SUNIONSTORE', dest, *args)
         return self.getResponse()
@@ -971,12 +1159,15 @@ class Redis(RedisBase):
 
     def move(self, key, db):
         """
+        Move a key to another database
         """
         self._send('MOVE', key, db)
         return self.getResponse()
 
     def flush(self, all_dbs=False):
         """
+        Remove all keys from the current database or, if all_dbs is True,
+        all databases.
         """
         if all_dbs:
             return self.flushall()
@@ -984,10 +1175,16 @@ class Redis(RedisBase):
             return self.flushdb()
 
     def flushall(self):
+        """
+        Remove all keys from all databases
+        """
         self._send('FLUSHALL')
         return self.getResponse()
 
     def flushdb(self):
+        """
+        Remove all keys from the current database
+        """
         self._send('FLUSHDB')
         return self.getResponse()
 
@@ -1054,6 +1251,7 @@ class Redis(RedisBase):
     def sort(self, key, by=None, get=None, start=None, num=None, desc=False,
              alpha=False):
         """
+        Sort the elements in a list, set or sorted set
         """
         stmt = ['SORT', key]
         if by:
@@ -1172,15 +1370,24 @@ class Redis(RedisBase):
     hmget = hget
 
     def hget_value(self, key, field):
+        """
+        Get the value of a hash field
+        """
         assert isinstance(field, basestring)
         self._send('HGET', key, field)
         return self.getResponse()
 
     def hkeys(self, key):
+        """
+        Get all the fields in a hash
+        """
         self._send('HKEYS', key)
         return self.getResponse()
 
     def hvals(self, key):
+        """
+        Get all the values in a hash
+        """
         self._send('HVALS', key)
         return self.getResponse()
 
@@ -1204,13 +1411,21 @@ class Redis(RedisBase):
         self._send('HEXISTS', key, field)
         return self.getResponse()
 
-    def hdel(self, key, field):
+    def hdel(self, key, *fields, **kwargs):
         """
         Removes field from the hash stored at key.
+        @param key : Hash key
+        @param fields : Sequence of fields to remvoe
+        @param field : For backwards compatibility. Single field to remove.
         """
-        self._send('HDEL', key, field)
+        if not kwargs:
+            self._send('HDEL', key, *fields)
+        elif 'field' in kwargs:
+            self._send('HDEL', key, field)
+        else:
+            raise InvalidCommand('Need arguments for HDEL')
         return self.getResponse()
-    hdelete = hdel # backwards compat for older txredis
+    hdelete = hdel  # backwards compat for older txredis
 
     def hlen(self, key):
         """
@@ -1259,19 +1474,55 @@ class Redis(RedisBase):
     # ZREMRANGEBYRANK
     # ZREMRANGEBYSCORE
     # ZUNIONSTORE / ZINTERSTORE
-    def zadd(self, key, member, score):
-        self._send('ZADD', key, score, member)
+    def zadd(self, key, *item_tuples, **kwargs):
+        """
+        Add members to a sorted set, or update its score if it already exists
+        @param key : Sorted set key
+        @param item_tuples : Sequence of score, value pairs.
+                            e.g. zadd(key, score1, value1, score2, value2)
+        @param member : For backwards compatibility, member name.
+        @param score : For backwards compatibility, score.
+
+        NOTE: if there are only two arguments, the order is interpreted as (value, score)
+              for backwards compatibility reasons.
+        """
+        if not kwargs and len(item_tuples) == 2 and isinstance(item_tuples[0], basestring):
+            self._send('ZADD', key, item_tuples[1], item_tuples[0])
+        elif not kwargs:
+            self._send('ZADD', key, *item_tuples)
+        elif 'member' in kwargs and 'score' in kwargs:
+            score, member = item_tuples
+            self._send('ZADD', key, kwargs['score'], kwargs['member'])
+        else:
+            raise InvalidCommand('Need arguments for ZADD')
         return self.getResponse()
 
-    def zrem(self, key, member):
-        self._send('ZREM', key, member)
+    def zrem(self, key, *members, **kwargs):
+        """
+        Remove members from a sorted set
+        @param key : Sorted set key
+        @param members : Sequeunce of members to remove
+        @param member : For backwards compatibility - if specified remove one member.
+        """
+        if not kwargs:
+            self._send('ZREM', key, *members)
+        elif 'member' in kwargs:
+            self._send('ZREM', key, kwargs['member'])
+        else:
+            raise InvalidCommand('Need arguments for ZREM')
         return self.getResponse()
 
     def zremrangebyrank(self, key, start, end):
+        """
+        Remove all members in a sorted set within the given indexes
+        """
         self._send('ZREMRANGEBYRANK', key, start, end)
         return self.getResponse()
 
     def zremrangebyscore(self, key, min, max):
+        """
+        Remove all members in a sorted set within the given scores
+        """
         self._send('ZREMRANGEBYSCORE', key, min, max)
         return self.getResponse()
 
@@ -1304,26 +1555,45 @@ class Redis(RedisBase):
         return self._zopstore('ZUNIONSTORE', dstkey, keys, aggregate)
 
     def zinterstore(self, dstkey, keys, aggregate=None):
-        """ Creates an intersection of N sorted sets at dstkey. keys can be a list
-        of keys or dict of keys mapping to weights. aggregate can be
-        one of SUM, MIN or MAX.
+        """Creates an intersection of N sorted sets at dstkey.
+
+        Keys can be a list of keys or dict of keys mapping to weights.
+        Aggregate can be one of SUM, MIN or MAX.
+
         """
         return self._zopstore('ZINTERSTORE', dstkey, keys, aggregate)
 
     def zincr(self, key, member, incr=1):
+        """
+        Increment the score of a member in a sorted set by the given amount
+        (default 1)
+        """
         self._send('ZINCRBY', key, incr, member)
         return self.getResponse()
 
     def zrank(self, key, member, reverse=False):
+        """
+        Determine the index of a member in a sorted set. If reverse
+        is True, the scores are orderd from high to low.
+        """
         cmd = 'ZREVRANK' if reverse else 'ZRANK'
         self._send(cmd, key, member)
         return self.getResponse()
 
     def zcount(self, key, min, max):
+        """
+        Count the members in a sorted set with scores within the given values
+        """
         self._send('ZCOUNT', key, min, max)
         return self.getResponse()
 
     def zrange(self, key, start, end, withscores=False, reverse=False):
+        """
+        Return a range of members in a sorted set, by index.
+        If withscores is True, the score is returned as well.
+        If reverse is True, the elements are considered to be
+        sorted from high to low.
+        """
         cmd = 'ZREVRANGE' if reverse else 'ZRANGE'
         args = [cmd, key, start, end]
         if withscores:
@@ -1337,7 +1607,7 @@ class Redis(RedisBase):
             bins = len(vals_and_scores) - 1
             i = 0
             while i < bins:
-                res.append((vals_and_scores[i], float(vals_and_scores[i+1])))
+                res.append((vals_and_scores[i], float(vals_and_scores[i + 1])))
                 i += 2
             return res
 
@@ -1346,18 +1616,33 @@ class Redis(RedisBase):
         return dfr
 
     def zrevrange(self, key, start, end, withscores=False):
+        """
+        Return a range of members in a sorted set, by index, with scores
+        ordered from high to low
+        """
         return self.zrange(key, start, end, withscores, reverse=True)
 
     def zrevrank(self, key, member):
+        """
+        Determine the index of a member in a sorted set, with scores ordered
+        from high to low
+        """
         self._send('ZREVRANK', key, member)
         return self.getResponse()
 
     def zcard(self, key):
+        """
+        Get the number of members in a sorted set
+        """
         self._send('ZCARD', key)
         return self.getResponse()
 
     def zscore(self, key, element):
+        """
+        Get the score associated with the given member in a sorted set
+        """
         self._send('ZSCORE', key, element)
+
         def post_process(res):
             if res is not None:
                 return float(res)
@@ -1367,6 +1652,9 @@ class Redis(RedisBase):
 
     def zrangebyscore(self, key, min='-inf', max='+inf', offset=None,
                       count=None, withscores=False):
+        """
+        Return a range of members in a sorted set, by score.
+        """
         args = ['ZRANGEBYSCORE', key, min, max]
         if offset and count:
             args.extend(['LIMIT', offset, count])
@@ -1381,7 +1669,7 @@ class Redis(RedisBase):
             bins = len(vals_and_scores) - 1
             i = 0
             while i < bins:
-                res.append((vals_and_scores[i], float(vals_and_scores[i+1])))
+                res.append((vals_and_scores[i], float(vals_and_scores[i + 1])))
                 i += 2
             return res
 
@@ -1389,9 +1677,13 @@ class Redis(RedisBase):
             dfr.addCallback(post_process)
         return dfr
 
+
 class HiRedisProtocol(Redis):
-    """ A subclass of the Redis protocol that uses the hiredis library for parsing. """
-    def __init__(self, db=None, password=None, charset='utf8', errors='strict'):
+    """A subclass of the Redis protocol that uses the hiredis library for
+    parsing.
+    """
+    def __init__(self, db=None, password=None, charset='utf8',
+                 errors='strict'):
         Redis.__init__(self, db, password, charset, errors)
         self._reader = hiredis.Reader(protocolError=InvalidData,
                                       replyError=ResponseError)
@@ -1538,6 +1830,7 @@ class RedisClientFactory(protocol.ReconnectingClientFactory):
 
     def buildProtocol(self, addr):
         from twisted.internet import reactor
+
         def fire(res):
             self.deferred.callback(self.client)
             self.deferred = defer.Deferred()
@@ -1550,4 +1843,3 @@ class RedisClientFactory(protocol.ReconnectingClientFactory):
 
 class RedisSubscriberFactory(RedisClientFactory):
     protocol = RedisSubscriber
-

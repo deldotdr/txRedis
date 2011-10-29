@@ -1,4 +1,3 @@
-
 import time
 
 from twisted.internet import error
@@ -118,6 +117,30 @@ class General(CommandsTestBase):
         a = yield r.delete('a')
         ex = 0
         t(a, ex)
+        a = yield r.set('a', 'a')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.set('b', 'b')
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.delete('a', 'b')
+        ex = 2
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_get_object(self):
+        r = self.redis
+        t = self.assertEqual
+        a = yield r.set('obj', 1)
+        ex = 'OK'
+        t(a, ex)
+
+        a = yield r.get_object('obj', idletime=True)
+        self.assertEqual(type(a), int)
+
+        a = yield r.get_object('obj', encoding=True)
+        ex = 'int'
+        t(a, ex)
 
     @defer.inlineCallbacks
     def test_get_type(self):
@@ -225,6 +248,21 @@ class General(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_expireat(self):
+        r = self.redis
+        t = self.assertEqual
+
+        a = yield r.set('a', 1)
+        ex = 'OK'
+        t(a, ex)
+        a = yield r.expireat('a', int(time.time() + 10))
+        ex = 1
+        t(a, ex)
+        a = yield r.expireat('zzzzz', int(time.time() + 10))
+        ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_setex(self):
         r = self.redis
         t = self.assertEqual
@@ -254,6 +292,9 @@ class General(CommandsTestBase):
         t(a, ex)
 
         a = yield r.mset({'ma': 1, 'mb': 2}, preserve=True)
+        ex = 0
+
+        a = yield r.msetnx({'ma': 1, 'mb': 2})
         ex = 0
         t(a, ex)
 
@@ -454,6 +495,18 @@ class General(CommandsTestBase):
         d.addCallback(step1)
         return d
 
+    @defer.inlineCallbacks
+    def test_watch(self):
+        r = yield self.redis.watch('foo')
+        self.assertEqual(r, 'OK')
+
+    @defer.inlineCallbacks
+    def test_unwatch(self):
+        yield self.redis.watch('foo')
+        r = yield self.redis.unwatch()
+        self.assertEqual(r, 'OK')
+
+
 class Strings(CommandsTestBase):
     """Test commands that operate on string values.
     """
@@ -481,6 +534,9 @@ class Strings(CommandsTestBase):
         self.assertEqual(a, 'OK')
 
         a = yield self.redis.set('b', 'xxx', preserve=True)
+        self.assertEqual(a, 0)
+
+        a = yield self.redis.setnx('b', 'xxx')
         self.assertEqual(a, 0)
 
         a = yield self.redis.get('b')
@@ -649,6 +705,32 @@ class Lists(CommandsTestBase):
         a = yield r.set('a', 'a')
         ex = 'OK'
         t(a, ex)
+
+        yield r.delete('l')
+        a = yield r.push('l', 'a', no_create=True)
+        ex = 0
+        t(a, ex)
+
+        a = yield r.push('l', 'a', tail=True, no_create=True)
+        ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_push_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('l')
+        yield r.lpush('l', 'a', 'b', 'c', 'd')
+        a = yield r.llen('l')
+        ex = 4
+        t(a, ex)
+
+        yield r.rpush('l', 't', 'u', 'v', 'w')
+        a = yield r.llen('l')
+        ex = 8
+        t(a, ex)
+
 
     @defer.inlineCallbacks
     def test_llen(self):
@@ -914,6 +996,18 @@ class Sets(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_sadd_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('s')
+        a = yield r.sadd('s', 'a', 'b', 'c', 'd')
+        ex = 4
+        a = yield r.scard('s')
+        ex = 4
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_sdiff(self):
         r = self.redis
         t = self.assertEqual
@@ -979,6 +1073,22 @@ class Sets(CommandsTestBase):
         t(a, ex)
         a = yield r.sismember('s', 'b')
         ex = 0
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_srem_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('s')
+        a = yield r.sadd('s', 'a', 'b', 'c', 'd')
+        ex = 4
+        t(a, ex)
+        a = yield r.srem('s', 'a', 'b')
+        ex = 2
+        t(a, ex)
+        a = yield r.scard('s')
+        ex = 2
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -1314,6 +1424,21 @@ class Hash(CommandsTestBase):
         t(a, ex)
 
     @defer.inlineCallbacks
+    def test_hdel_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('d')
+        yield r.hset('d', 'a', 'vala')
+        yield r.hmset('d', {'a' : 'vala', 'b' : 'valb', 'c' : 'valc'})
+        a = yield r.hdel('d', 'a', 'b', 'c')
+        ex = 3
+        t(a, ex)
+        a = yield r.hgetall('d')
+        ex = {}
+        t(a, ex)
+
+    @defer.inlineCallbacks
     def test_hincr(self):
         r = self.redis
         t = self.assertEqual
@@ -1408,6 +1533,67 @@ class LargeMultiBulk(CommandsTestBase):
         t(res, set(map(str, data)))
 
 
+class MultiBulk(CommandsTestBase):
+    @defer.inlineCallbacks
+    def test_nested_multibulk(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('str1', 'str2', 'list1', 'list2')
+        yield r.set('str1', 'str1')
+        yield r.set('str2', 'str2')
+        yield r.lpush('list1', 'b1')
+        yield r.lpush('list1', 'a1')
+        yield r.lpush('list2', 'b2')
+        yield r.lpush('list2', 'a2')
+
+        r.multi()
+        r.get('str1')
+        r.lrange('list1', 0, -1)
+        r.get('str2')
+        r.lrange('list2', 0, -1)
+        r.get('notthere')
+
+        a = yield r.execute()
+        ex = ['str1', ['a1', 'b1'], 'str2', ['a2', 'b2'], None]
+        t(a, ex)
+
+        a = yield r.get('str2')
+        ex = 'str2'
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_empty_multibulk(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('list1')
+        a = yield r.lrange('list1', 0, -1)
+        ex = []
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_null_multibulk(self):
+        r = self.redis
+        t = self.assertEqual
+
+        clientCreator = protocol.ClientCreator(reactor, self.protocol)
+        r2 = yield clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
+
+        yield r.delete('a')
+
+        r.watch('a')
+        r.multi()
+        yield r.set('a', 'a')
+        yield r2.set('a', 'b')
+
+        r2.transport.loseConnection()
+
+        a = yield r.execute()
+        ex = None
+        t(a, ex)
+
+
 class SortedSet(CommandsTestBase):
     """Test commands that operate on sorted sets.
     """
@@ -1482,6 +1668,44 @@ class SortedSet(CommandsTestBase):
         yield r.zadd('z', 'c', 3.0)
         a = yield r.zremrangebyrank('z', 0, 2)
         ex = 3
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_add_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        yield r.zadd('z', 'a', 1.0)
+        a = yield r.zcard('z')
+        ex = 1
+        t(a, ex)
+
+        # NB. note how for multiple argument it's score then val
+        yield r.zadd('z', 2.0, 'b', 3.0, 'c')
+        a = yield r.zcard('z')
+        ex = 3
+
+    @defer.inlineCallbacks
+    def test_zrem_variable(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        yield r.zadd('z', 'a', 1.0)
+        a = yield r.zcard('z')
+        ex = 1
+        t(a, ex)
+
+        # NB. note how for multiple argument it's score then val
+        yield r.zadd('z', 2.0, 'b', 3.0, 'c')
+        a = yield r.zcard('z')
+        ex = 3
+        t(a, ex)
+
+        yield r.zrem('z', 'a', 'b', 'c')
+        a = yield r.zcard('z')
+        ex = 0
         t(a, ex)
 
     @defer.inlineCallbacks
