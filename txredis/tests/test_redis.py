@@ -11,6 +11,7 @@ from twisted.trial import unittest
 from txredis.protocol import Redis, RedisSubscriber, RedisClientFactory
 from txredis.protocol import ResponseError
 
+
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6381
 

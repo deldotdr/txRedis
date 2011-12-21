@@ -1,4 +1,5 @@
-from txredis.test import test_redis
+import test_redis
+
 
 # if hiredis and its python wrappers are installed, test them too
 try:
