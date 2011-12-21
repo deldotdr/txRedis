@@ -296,3 +296,25 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     def send(self, command, *args):
         self._send(command, *args)
         return self.getResponse()
+
+
+class HiRedisBase(RedisBase):
+    """A subclass of the RedisBase protocol that uses the hiredis library for
+    parsing.
+    """
+
+    def dataReceived(self, data):
+        """Receive data.
+        """
+        self.resetTimeout()
+        if data:
+            self._reader.feed(data)
+        res = self._reader.gets()
+        while res is not False:
+            if isinstance(res, exceptions.ResponseError):
+                self._request_queue.popleft().errback(res)
+            else:
+                if isinstance(res, basestring) and res == 'none':
+                    res = None
+                self._request_queue.popleft().callback(res)
+            res = self._reader.gets()
