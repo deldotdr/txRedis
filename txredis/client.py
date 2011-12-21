@@ -1,3 +1,6 @@
+"""
+@file client.py
+"""
 import itertools
 
 from twisted.internet import defer

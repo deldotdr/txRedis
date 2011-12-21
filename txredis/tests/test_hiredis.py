@@ -1,23 +1,47 @@
-import test_redis
-
-
 # if hiredis and its python wrappers are installed, test them too
 try:
     import hiredis
+
     from txredis.protocol import HiRedisProtocol
-    class HiRedisGeneral(test_redis.General):
+    from txredis.tests import test_client
+
+    isHiRedis = True
+
+except ImportError:
+    isHiRedis = False
+
+
+if isHiRedis:
+
+    class HiRedisGeneral(test_client.GeneralCommandTestCase):
+
         protcol = HiRedisProtocol
-    class HiRedisStrings(test_redis.Strings):
+
+
+    class HiRedisStrings(test_client.StringsCommandTestCase):
+
         protocol = HiRedisProtocol
-    class HiRedisLists(test_redis.Lists):
+
+
+    class HiRedisLists(test_client.ListsCommandsTestCase):
+
         protocol = HiRedisProtocol
-    class HiRedisHash(test_redis.Hash):
+
+
+    class HiRedisHash(test_client.HashCommandsTestCase):
+
         protocol = HiRedisProtocol
-    class HiRedisSortedSet(test_redis.SortedSet):
+
+
+    class HiRedisSortedSet(test_client.SortedSetCommandsTestCase):
+
         protocol = HiRedisProtocol
-    class HiRedisSets(test_redis.Sets):
+
+
+    class HiRedisSets(test_client.SetsCommandsTestCase):
+
         protocol = HiRedisProtocol
+
+
     _hush_pyflakes = hiredis
     del _hush_pyflakes
-except ImportError:
-    pass
