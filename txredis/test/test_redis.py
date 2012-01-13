@@ -1726,6 +1726,10 @@ class SortedSet(CommandsTestBase):
         ex = ['c', 'a', 'b', 'd']
         t(a, ex)
 
+        a = yield r.zrangebyscore('z', count=2)
+        ex = ['c', 'a']
+        t(a, ex)
+
         a = yield r.zrangebyscore('z', offset=1, count=2)
         ex = ['a', 'b']
         t(a, ex)
