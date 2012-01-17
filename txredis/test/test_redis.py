@@ -1726,6 +1726,10 @@ class SortedSet(CommandsTestBase):
         ex = ['c', 'a', 'b', 'd']
         t(a, ex)
 
+        a = yield r.zrangebyscore('z', count=2)
+        ex = ['c', 'a']
+        t(a, ex)
+
         a = yield r.zrangebyscore('z', offset=1, count=2)
         ex = ['a', 'b']
         t(a, ex)
@@ -1750,6 +1754,39 @@ class SortedSet(CommandsTestBase):
         a = yield r.zrange('a', 0, -1, withscores=True)
         t(a, [])
 
+
+    @defer.inlineCallbacks
+    def test_zrevrangebyscore(self):
+        r = self.redis
+        t = self.assertEqual
+
+        yield r.delete('z')
+        a = yield r.zrevrangebyscore('z', -1, -1, withscores=True)
+        ex = []
+        t(a, ex)
+
+        yield r.zadd('z', 'a', 1.014)
+        yield r.zadd('z', 'b', 4.252)
+        yield r.zadd('z', 'c', 0.232)
+        yield r.zadd('z', 'd', 10.425)
+        a = yield r.zrevrangebyscore('z')
+        ex = 'd b a c'.split()
+        t(a, ex)
+
+        a = yield r.zrevrangebyscore('z', count=2)
+        ex = 'd b'.split()
+        t(a, ex)
+
+        a = yield r.zrevrangebyscore('z', offset=1, count=2)
+        ex = 'b a'.split()
+        t(a, ex)
+
+        a = yield r.zrevrangebyscore('z', offset=1, count=2, withscores=True)
+        ex = [('b', 4.252), ('a', 1.014)]
+        t(a, ex)
+
+        a = yield r.zrevrangebyscore('z', max=10, offset=1, count=2, withscores=True)
+        ex = [('a', 1.014), ('c', 0.232)]
 
     @defer.inlineCallbacks
     def test_zaggregatestore(self):
