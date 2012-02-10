@@ -9,7 +9,7 @@ from twisted.test.proto_helpers import StringTransportWithDisconnection
 from twisted.trial import unittest
 
 from txredis.exceptions import ResponseError
-from txredis.protocol import Redis, RedisSubscriber, RedisClientFactory
+from txredis.client import Redis, RedisSubscriber, RedisClientFactory
 
 
 REDIS_HOST = 'localhost'
