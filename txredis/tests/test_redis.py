@@ -8,8 +8,8 @@ from twisted.internet.task import Clock
 from twisted.test.proto_helpers import StringTransportWithDisconnection
 from twisted.trial import unittest
 
+from txredis.exceptions import ResponseError
 from txredis.protocol import Redis, RedisSubscriber, RedisClientFactory
-from txredis.protocol import ResponseError
 
 
 REDIS_HOST = 'localhost'

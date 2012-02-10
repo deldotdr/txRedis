@@ -64,8 +64,6 @@ Redis google code project: http://code.google.com/p/redis/
 Command doc strings taken from the CommandReference wiki page.
 
 """
-
-
 from collections import deque
 from itertools import chain, izip
 
@@ -77,28 +75,8 @@ try:
 except ImportError:
     pass
 
+from txredis import exceptions
 
-class RedisError(Exception):
-    pass
-
-
-class ConnectionError(RedisError):
-    pass
-
-
-class ResponseError(RedisError):
-    pass
-
-
-class InvalidResponse(RedisError):
-    pass
-
-
-class InvalidData(RedisError):
-    pass
-
-class InvalidCommand(RedisError):
-    pass
 
 class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     """The main Redis client."""
@@ -169,8 +147,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
                 try:
                     self._bulk_length = int(reply_data)
                 except ValueError:
-                    r = InvalidResponse("Cannot convert data '%s' to integer"
-                                        % reply_data)
+                    r = exceptions.InvalidResponse(
+                        "Cannot convert data '%s' to integer" % reply_data)
                     self.responseReceived(r)
                     return
                 # requested value may not exist
@@ -182,8 +160,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
                 try:
                     multi_bulk_length = int(reply_data)
                 except ValueError:
-                    r = InvalidResponse("Cannot convert data '%s' to integer"
-                                        % reply_data)
+                    r = exceptions.InvalidResponse(
+                        "Cannot convert data '%s' to integer" % reply_data)
                     self.responseReceived(r)
                     return
                 if multi_bulk_length == -1:
@@ -239,7 +217,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
     def errorReceived(self, data):
         """Error response received."""
-        reply = ResponseError(data if data[:4] == 'ERR ' else data)
+        reply = exceptions.ResponseError(
+            data if data[:4] == 'ERR ' else data)
         if self._request_queue:
             # properly errback this reply
             self._request_queue.popleft().errback(reply)
@@ -269,8 +248,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         try:
             reply = int(data)
         except ValueError:
-            reply = InvalidResponse("Cannot convert data '%s' to integer"
-                                    % data)
+            reply = exceptions.InvalidResponse(
+                "Cannot convert data '%s' to integer" % data)
         if self._multi_bulk_stack:
             self.handleMultiBulkElement(reply)
             return
@@ -329,8 +308,9 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             try:
                 return s.encode(self.charset, self.errors)
             except UnicodeEncodeError, e:
-                raise InvalidData("Error encoding unicode value '%s': %s"
-                                  % (s.encode(self.charset, 'replace'), e))
+                raise exceptions.InvalidData(
+                    "Error encoding unicode value '%s': %s" % (
+                        s.encode(self.charset, 'replace'), e))
         return str(s)
 
     def _send(self, *args):
@@ -576,7 +556,7 @@ class Redis(RedisBase):
         elif refcount:
             subcommand = 'REFCOUNT'
         if not subcommand:
-            raise InvalidCommand('Need a subcommand')
+            raise exceptions.InvalidCommand('Need a subcommand')
         self._send('OBJECT', subcommand, key)
         return self.getResponse()
 
@@ -732,7 +712,7 @@ class Redis(RedisBase):
         elif 'value' in kwargs:
             self._send('LPUSH', key, kwargs['value'])
         else:
-            raise InvalidCommand('Need arguments for LPUSH')
+            raise exceptions.InvalidCommand('Need arguments for LPUSH')
         return self.getResponse()
 
     def rpush(self, key, *values, **kwargs):
@@ -747,7 +727,7 @@ class Redis(RedisBase):
         elif 'value' in kwargs:
             self._send('RPUSH', key, kwargs['value'])
         else:
-            raise InvalidCommand('Need arguments for RPUSH')
+            raise exceptions.InvalidCommand('Need arguments for RPUSH')
         return self.getResponse()
 
     def lpushx(self, key, value):
@@ -1048,7 +1028,7 @@ class Redis(RedisBase):
         elif 'value' in kwargs:
             self._send('SADD', key, kwargs['value'])
         else:
-            raise InvalidCommand('Need arguments for SADD')
+            raise exceptions.InvalidCommand('Need arguments for SADD')
         return self.getResponse()
 
     def srem(self, key, *values, **kwargs):
@@ -1063,7 +1043,7 @@ class Redis(RedisBase):
         elif 'value' in kwargs:
             self._send('SREM', key, kwargs['value'])
         else:
-            raise InvalidCommand('Need arguments for SREM')
+            raise exceptions.InvalidCommand('Need arguments for SREM')
         return self.getResponse()
 
     def spop(self, key):
@@ -1266,7 +1246,8 @@ class Redis(RedisBase):
             for g in get:
                 stmt.extend(['GET', get])
         else:
-            raise RedisError("Invalid parameter 'get' for Redis sort")
+            raise exceptions.RedisError(
+                "Invalid parameter 'get' for Redis sort")
         if desc:
             stmt.append("DESC")
         if alpha:
@@ -1421,9 +1402,13 @@ class Redis(RedisBase):
         if not kwargs:
             self._send('HDEL', key, *fields)
         elif 'field' in kwargs:
+            # XXX this looks like a bug... the 'field' parameter has been
+            # removed from the sig, so this should probably be kwargs['field']
+            # I will address this in the branch that cleans up the unit tests
+            # (since this is obviously missing a unit test...)
             self._send('HDEL', key, field)
         else:
-            raise InvalidCommand('Need arguments for HDEL')
+            raise exceptions.InvalidCommand('Need arguments for HDEL')
         return self.getResponse()
     hdelete = hdel  # backwards compat for older txredis
 
@@ -1494,7 +1479,7 @@ class Redis(RedisBase):
             score, member = item_tuples
             self._send('ZADD', key, kwargs['score'], kwargs['member'])
         else:
-            raise InvalidCommand('Need arguments for ZADD')
+            raise exceptions.InvalidCommand('Need arguments for ZADD')
         return self.getResponse()
 
     def zrem(self, key, *members, **kwargs):
@@ -1509,7 +1494,7 @@ class Redis(RedisBase):
         elif 'member' in kwargs:
             self._send('ZREM', key, kwargs['member'])
         else:
-            raise InvalidCommand('Need arguments for ZREM')
+            raise exceptions.InvalidCommand('Need arguments for ZREM')
         return self.getResponse()
 
     def zremrangebyrank(self, key, start, end):
@@ -1685,8 +1670,8 @@ class HiRedisProtocol(Redis):
     def __init__(self, db=None, password=None, charset='utf8',
                  errors='strict'):
         Redis.__init__(self, db, password, charset, errors)
-        self._reader = hiredis.Reader(protocolError=InvalidData,
-                                      replyError=ResponseError)
+        self._reader = hiredis.Reader(protocolError=exceptions.InvalidData,
+                                      replyError=exceptions.ResponseError)
 
     def dataReceived(self, data):
         """Receive data.
@@ -1696,7 +1681,7 @@ class HiRedisProtocol(Redis):
             self._reader.feed(data)
         res = self._reader.gets()
         while res is not False:
-            if isinstance(res, ResponseError):
+            if isinstance(res, exceptions.ResponseError):
                 self._request_queue.popleft().errback(res)
             else:
                 if isinstance(res, basestring) and res == 'none':
