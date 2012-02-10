@@ -1,3 +1,6 @@
+"""
+@file client.py
+"""
 import itertools
 
 from twisted.internet import defer
@@ -9,10 +12,10 @@ except ImportError:
     pass
 
 from txredis import exceptions
-from txredis.protocol import RedisBase
+from txredis.protocol import RedisBase, HiRedisBase
 
 
-class Redis(RedisBase):
+class RedisClient(RedisBase):
     """The main Redis client."""
 
     def __init__(self, *args, **kwargs):
@@ -1344,31 +1347,15 @@ class Redis(RedisBase):
         return dfr
 
 
-class HiRedisProtocol(Redis):
+class HiRedisClient(HiRedisBase, RedisClient):
     """A subclass of the Redis protocol that uses the hiredis library for
     parsing.
     """
     def __init__(self, db=None, password=None, charset='utf8',
                  errors='strict'):
-        Redis.__init__(self, db, password, charset, errors)
+        super(HiRedisClient, self).__init__(db, password, charset, errors)
         self._reader = hiredis.Reader(protocolError=exceptions.InvalidData,
                                       replyError=exceptions.ResponseError)
-
-    def dataReceived(self, data):
-        """Receive data.
-        """
-        self.resetTimeout()
-        if data:
-            self._reader.feed(data)
-        res = self._reader.gets()
-        while res is not False:
-            if isinstance(res, exceptions.ResponseError):
-                self._request_queue.popleft().errback(res)
-            else:
-                if isinstance(res, basestring) and res == 'none':
-                    res = None
-                self._request_queue.popleft().callback(res)
-            res = self._reader.gets()
 
 
 class RedisSubscriber(RedisBase):
@@ -1485,7 +1472,8 @@ class RedisSubscriber(RedisBase):
 
 
 class RedisClientFactory(ReconnectingClientFactory):
-    protocol = Redis
+
+    protocol = RedisClient
 
     def __init__(self, *args, **kwargs):
         self.noisy = True
@@ -1509,3 +1497,8 @@ class RedisClientFactory(ReconnectingClientFactory):
 
 class RedisSubscriberFactory(RedisClientFactory):
     protocol = RedisSubscriber
+
+
+# backwards compatibility
+Redis = RedisClient
+HiRedisProtocol = HiRedisClient

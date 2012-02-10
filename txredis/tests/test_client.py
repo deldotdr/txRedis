@@ -8,36 +8,12 @@ from twisted.internet.task import Clock
 from twisted.test.proto_helpers import StringTransportWithDisconnection
 from twisted.trial import unittest
 
-from txredis.exceptions import ResponseError
 from txredis.client import Redis, RedisSubscriber, RedisClientFactory
+from txredis.exceptions import ResponseError
+from txredis.testing import CommandsBaseTestCase, REDIS_HOST, REDIS_PORT
 
 
-REDIS_HOST = 'localhost'
-REDIS_PORT = 6381
-
-
-class CommandsTestBase(unittest.TestCase):
-    protocol = Redis
-    def setUp(self):
-        clientCreator = protocol.ClientCreator(reactor, self.protocol)
-        d = clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
-        def got_conn(redis):
-            self.redis = redis
-        d.addCallback(got_conn)
-        def cannot_conn(res):
-            msg = '\n' * 3 + '*' * 80 + '\n' * 2
-            msg += "NOTE: Redis server not running on port %s. Please start a local instance of Redis " \
-                  "on this port to run unit tests against.\n\n" % REDIS_PORT
-            msg += '*' * 80 + '\n' * 4
-            raise unittest.SkipTest(msg)
-        d.addErrback(cannot_conn)
-        return d
-
-    def tearDown(self):
-        self.redis.transport.loseConnection()
-
-
-class General(CommandsTestBase):
+class GeneralCommandTestCase(CommandsBaseTestCase):
     """Test commands that operate on any type of redis value.
     """
     @defer.inlineCallbacks
@@ -508,7 +484,7 @@ class General(CommandsTestBase):
         self.assertEqual(r, 'OK')
 
 
-class Strings(CommandsTestBase):
+class StringsCommandTestCase(CommandsBaseTestCase):
     """Test commands that operate on string values.
     """
 
@@ -653,7 +629,7 @@ class Strings(CommandsTestBase):
         t(a, ex)
 
 
-class Lists(CommandsTestBase):
+class ListsCommandsTestCase(CommandsBaseTestCase):
     """Test commands that operate on lists.
     """
 
@@ -966,7 +942,7 @@ class Lists(CommandsTestBase):
         t(a, ex)
 
 
-class Sets(CommandsTestBase):
+class SetsCommandsTestCase(CommandsBaseTestCase):
     """Test commands that operate on sets.
     """
 
@@ -1348,7 +1324,7 @@ class Sets(CommandsTestBase):
             t(rval, str(value))
 
 
-class Hash(CommandsTestBase):
+class HashCommandsTestCase(CommandsBaseTestCase):
     """Test commands that operate on hashes.
     """
 
@@ -1520,7 +1496,7 @@ class Hash(CommandsTestBase):
         t(a, ex)
 
 
-class LargeMultiBulk(CommandsTestBase):
+class LargeMultiBulkTestCase(CommandsBaseTestCase):
     @defer.inlineCallbacks
     def test_large_multibulk(self):
         r = self.redis
@@ -1534,7 +1510,7 @@ class LargeMultiBulk(CommandsTestBase):
         t(res, set(map(str, data)))
 
 
-class MultiBulk(CommandsTestBase):
+class MultiBulkTestCase(CommandsBaseTestCase):
     @defer.inlineCallbacks
     def test_nested_multibulk(self):
         r = self.redis
@@ -1595,7 +1571,7 @@ class MultiBulk(CommandsTestBase):
         t(a, ex)
 
 
-class SortedSet(CommandsTestBase):
+class SortedSetCommandsTestCase(CommandsBaseTestCase):
     """Test commands that operate on sorted sets.
     """
     @defer.inlineCallbacks
@@ -1800,7 +1776,7 @@ class SortedSet(CommandsTestBase):
         t(a, ex)
 
 
-class BlockingListOperartions(CommandsTestBase):
+class BlockingListOperartionsTestCase(CommandsBaseTestCase):
     """@todo test timeout
     @todo robustly test async/blocking redis commands
     """
@@ -1858,7 +1834,7 @@ class BlockingListOperartions(CommandsTestBase):
         r2.transport.loseConnection()
 
 
-class Network(unittest.TestCase):
+class NetworkTestCase(unittest.TestCase):
 
     def setUp(self):
         self.proto = Redis()
@@ -1897,8 +1873,7 @@ class Network(unittest.TestCase):
         return done.addCallback(checkFailures)
 
 
-
-class Protocol(unittest.TestCase):
+class ProtocolTestCase(unittest.TestCase):
 
     def setUp(self):
         self.proto = Redis()
@@ -1953,9 +1928,11 @@ class Protocol(unittest.TestCase):
         r = yield d
         self.assertEquals(r, 1234)
 
-class TestFactory(CommandsTestBase):
+
+class TestFactory(CommandsBaseTestCase):
+
     def setUp(self):
-        d = CommandsTestBase.setUp(self)
+        d = CommandsBaseTestCase.setUp(self)
         def do_setup(_res):
             self.factory = RedisClientFactory()
             reactor.connectTCP(REDIS_HOST, REDIS_PORT, self.factory)
@@ -1968,7 +1945,7 @@ class TestFactory(CommandsTestBase):
         return d
 
     def tearDown(self):
-        CommandsTestBase.tearDown(self)
+        CommandsBaseTestCase.tearDown(self)
         self.factory.continueTrying = 0
         self.factory.stopTrying()
         if self.factory.client:
@@ -1991,7 +1968,7 @@ class TestFactory(CommandsTestBase):
     timeout = 4
 
 
-class ProtocolBuffering(Protocol):
+class ProtocolBufferingTestCase(ProtocolTestCase):
 
     def sendResponse(self, data):
         """Send a response one character at a time to test buffering"""
@@ -1999,11 +1976,11 @@ class ProtocolBuffering(Protocol):
             self.proto.dataReceived(char)
 
 
-class PubSub(CommandsTestBase):
+class PubSubCommandsTestCase(CommandsBaseTestCase):
 
     @defer.inlineCallbacks
     def setUp(self):
-        yield CommandsTestBase.setUp(self)
+        yield CommandsBaseTestCase.setUp(self)
 
         class TestSubscriber(RedisSubscriber):
 
@@ -2032,7 +2009,7 @@ class PubSub(CommandsTestBase):
                                                          REDIS_PORT)
 
     def tearDown(self):
-        CommandsTestBase.tearDown(self)
+        CommandsBaseTestCase.tearDown(self)
         self.subscriber.transport.loseConnection()
 
     @defer.inlineCallbacks
@@ -2103,4 +2080,3 @@ class PubSub(CommandsTestBase):
         yield s.punsubscribe("channel*", "woot*")
         yield cb
         yield s.punsubscribe()
-
