@@ -1353,6 +1353,24 @@ class RedisClient(RedisBase):
         self._send('SCRIPT', 'LOAD', script)
         return self.getResponse()
 
+    def evalsha(self, sha1, keys=None, args=None):
+        """
+        Evaluates a script cached on the server side by its SHA1 digest.
+        """
+        keys_ = []
+        n = 0
+        if keys:
+            keys_ = keys
+            n = len(keys)
+
+        args_ = []
+        if args:
+            args_ = args
+
+        self._send("EVALSHA", sha1, n, *(keys_ + args_))
+
+        return self.getResponse()
+
 
 class HiRedisClient(HiRedisBase, RedisClient):
     """A subclass of the Redis protocol that uses the hiredis library for

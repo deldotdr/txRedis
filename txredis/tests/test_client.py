@@ -2094,3 +2094,26 @@ class LuaScriptingTestCase(CommandsBaseTestCase):
 
         a = yield self.redis.script_load(script)
         t(a, sha1)
+
+    @defer.inlineCallbacks
+    def test_evalsha(self):
+        t = self.assertEqual
+
+        script = "return redis.call('get','foo')"
+        sha1 = "6b1bf486c81ceb7edf3c093f4c48582e38c0e791"
+
+        sha1 = yield self.redis.script_load(script)
+        yield self.redis.set("foo", "1")
+        a = yield self.redis.evalsha(sha1)
+        t(a, "1")
+
+    @defer.inlineCallbacks
+    def test_evalsha_with_args(self):
+        t = self.assertEqual
+
+        script = "return {ARGV[1],ARGV[2],KEYS[1]}"
+        sha1 = yield self.redis.script_load(script)
+
+        a = yield self.redis.evalsha(sha1, ['key1'], ["first", "second"])
+
+        t(a, ['first', 'second', 'key1'])
