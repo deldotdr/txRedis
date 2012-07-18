@@ -2080,3 +2080,17 @@ class PubSubCommandsTestCase(CommandsBaseTestCase):
         yield s.punsubscribe("channel*", "woot*")
         yield cb
         yield s.punsubscribe()
+
+
+class LuaScriptingTestCase(CommandsBaseTestCase):
+    """Test commands that operate using lua scripting.
+    """
+    @defer.inlineCallbacks
+    def test_script_load(self):
+        t = self.assertEqual
+
+        script = "return redis.call('get','foo')"
+        sha1 = "6b1bf486c81ceb7edf3c093f4c48582e38c0e791"
+
+        a = yield self.redis.script_load(script)
+        t(a, sha1)

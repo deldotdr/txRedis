@@ -1346,6 +1346,13 @@ class RedisClient(RedisBase):
             dfr.addCallback(post_process)
         return dfr
 
+    def script_load(self, script):
+        """
+        Load a script into the scripts cache, without executing it.
+        """
+        self._send('SCRIPT', 'LOAD', script)
+        return self.getResponse()
+
 
 class HiRedisClient(HiRedisBase, RedisClient):
     """A subclass of the Redis protocol that uses the hiredis library for
