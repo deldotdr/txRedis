@@ -1856,6 +1856,38 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         ex = [True, False]
         t(a, ex)
 
+    @defer.inlineCallbacks
+    def test_script_flush(self):
+        r = self.redis
+        t = self.assertEqual
+
+        source = ('redis.call("SET", KEYS[1], ARGV[1]) '
+                  'return redis.call("GET", KEYS[1])')
+        yield r.script_load(source)
+        script1 = hashlib.sha1(source).hexdigest()
+        source = 'return "ok"'
+        yield r.script_load(source)
+        script2 = hashlib.sha1(source).hexdigest()
+
+        yield r.script_flush()
+        a = yield r.script_exists(script1, script2)
+        ex = [False, False]
+        t(a, ex)
+
+    def test_script_kill(self):
+        r = self.redis
+        t = self.assertEqual
+
+        def eb(why):
+            t(str(why.value), 'ERR No scripts in execution right now.')
+            return why
+
+        d = r.script_kill()
+        d.addErrback(eb)
+        self.assertFailure(d, ResponseError)
+
+        return d
+
 
 class BlockingListOperartionsTestCase(CommandsBaseTestCase):
     """@todo test timeout

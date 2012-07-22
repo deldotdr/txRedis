@@ -1350,6 +1350,10 @@ class RedisClient(RedisBase):
     # Scripting Commands:
     # EVAL
     # EVALSHA
+    # SCRIPT LOAD
+    # SCRIPT EXISTS
+    # SCRIPT FLUSH
+    # SCRIPT KILL
 
     def eval(self, source, keys=(), args=()):
         """
@@ -1380,7 +1384,27 @@ class RedisClient(RedisBase):
         return self.getResponse()
 
     def script_exists(self, *sha1s):
+        """
+        Check whether of no scripts for given sha1 exists in cache. Returns
+        list of booleans.
+        """
         args = ['SCRIPT', 'EXISTS'] + list(sha1s)
+        self._send(*args)
+        return self.getResponse()
+
+    def script_flush(self):
+        """
+        Flush the script cache.
+        """
+        args = ['SCRIPT', 'FLUSH']
+        self._send(*args)
+        return self.getResponse()
+
+    def script_kill(self):
+        """
+        Kill the currently executing script.
+        """
+        args = ['SCRIPT', 'KILL']
         self._send(*args)
         return self.getResponse()
 
