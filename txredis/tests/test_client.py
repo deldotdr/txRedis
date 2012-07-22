@@ -10,7 +10,7 @@ from twisted.test.proto_helpers import StringTransportWithDisconnection
 from twisted.trial import unittest
 
 from txredis.client import Redis, RedisSubscriber, RedisClientFactory
-from txredis.exceptions import ResponseError
+from txredis.exceptions import ResponseError, NoScript
 from txredis.testing import CommandsBaseTestCase, REDIS_HOST, REDIS_PORT
 
 
@@ -1829,6 +1829,13 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         a = yield r.evalsha(sha1, args=('c', 'd'))
         ex = ['c', 'd']
         t(a, ex)
+
+    def test_no_script(self):
+        r = self.redis
+        sha1 = hashlib.sha1('banana').hexdigest()
+        d = r.evalsha(sha1)
+        self.assertFailure(d, NoScript)
+        return d
 
     @defer.inlineCallbacks
     def test_script_load(self):
