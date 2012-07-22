@@ -1830,6 +1830,17 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         ex = ['c', 'd']
         t(a, ex)
 
+    @defer.inlineCallbacks
+    def test_script_load(self):
+        r = self.redis
+        t = self.assertEqual
+
+        source = ('redis.call("SET", KEYS[1], ARGV[1]) '
+                  'return redis.call("GET", KEYS[1])')
+        a = yield r.script_load(source)
+        ex = hashlib.sha1(source).hexdigest()
+        t(a, ex)
+
 
 class BlockingListOperartionsTestCase(CommandsBaseTestCase):
     """@todo test timeout

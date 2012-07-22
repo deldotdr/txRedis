@@ -1370,6 +1370,15 @@ class RedisClient(RedisBase):
         self._send(*args)
         return self.getResponse()
 
+    def script_load(self, source):
+        """
+        Load Lua script source into cache. This returns the SHA1 of the loaded
+        script on success.
+        """
+        args = ['SCRIPT', 'LOAD', source]
+        self._send(*args)
+        return self.getResponse()
+
 
 class HiRedisClient(HiRedisBase, RedisClient):
     """A subclass of the Redis protocol that uses the hiredis library for
