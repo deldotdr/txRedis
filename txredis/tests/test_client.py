@@ -180,7 +180,7 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
         d = r.rename('a', 'a')
         self.failUnlessFailure(d, ResponseError)
         def test_err(a):
-            ex = ResponseError('ERR source and destination objects are the same')
+            ex = ResponseError('source and destination objects are the same')
             t(str(a), str(ex))
         d.addCallback(test_err)
         return d
@@ -859,7 +859,7 @@ class ListsCommandsTestCase(CommandsBaseTestCase):
             d = r.lset('l', 0, 'a')
             self.failUnlessFailure(d, ResponseError)
             def match_err(a):
-                ex = ResponseError('ERR no such key')
+                ex = ResponseError('no such key')
                 t(str(a), str(ex))
             d.addCallback(match_err)
             return d
@@ -879,7 +879,7 @@ class ListsCommandsTestCase(CommandsBaseTestCase):
                 d = r.lset('l', 1, 'a')
                 self.failUnlessFailure(d, ResponseError)
                 def check(a):
-                    ex = ResponseError('ERR index out of range')
+                    ex = ResponseError('index out of range')
                     t(str(a), str(ex))
                 d.addCallback(check)
                 return d
