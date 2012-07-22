@@ -1349,10 +1349,24 @@ class RedisClient(RedisBase):
     # # # # # # # # #
     # Scripting Commands:
     # EVAL
+    # EVALSHA
 
     def eval(self, source, keys=(), args=()):
+        """
+        Evaluate Lua script source with keys and arguments.
+        """
         keycount = len(keys)
         args = ['EVAL', source, keycount] + list(keys) + list(args)
+        self._send(*args)
+        return self.getResponse()
+
+    def evalsha(self, sha1, keys=(), args=()):
+        """
+        Evaluate Lua script loaded in script cache under given sha1 with keys
+        and arguments.
+        """
+        keycount = len(keys)
+        args = ['EVALSHA', sha1, keycount] + list(keys) + list(args)
         self._send(*args)
         return self.getResponse()
 

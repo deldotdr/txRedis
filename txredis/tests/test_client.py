@@ -1,4 +1,5 @@
 import time
+import hashlib
 
 from twisted.internet import error
 from twisted.internet import protocol
@@ -1775,12 +1776,18 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         ex = 3
         t(a, ex)
 
+
+class ScriptingCommandsTestCase(CommandsBaseTestCase):
+    """
+    Test for Lua scripting commands.
+    """
+
     @defer.inlineCallbacks
     def test_eval(self):
         r = self.redis
         t = self.assertEqual
 
-        source = ('return "ok"')
+        source = 'return "ok"'
         a = yield r.eval(source)
         ex = 'ok'
         t(a, ex)
@@ -1794,6 +1801,33 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         source = 'return {ARGV[1], ARGV[2]}'
         a = yield r.eval(source, args=('a', 'b'))
         ex = ['a', 'b']
+        t(a, ex)
+
+    @defer.inlineCallbacks
+    def test_evalsha(self):
+        r = self.redis
+        t = self.assertEqual
+
+        source = 'return "ok"'
+        yield r.eval(source)
+        sha1 = hashlib.sha1(source).hexdigest()
+        a = yield r.evalsha(sha1)
+        ex = 'ok'
+        t(a, ex)
+
+        source = ('redis.call("SET", KEYS[1], ARGV[1]) '
+                  'return redis.call("GET", KEYS[1])')
+        yield r.eval(source, ('test_eval2',), ('x',))
+        sha1 = hashlib.sha1(source).hexdigest()
+        a = yield r.evalsha(sha1, ('test_eval3',), ('y',))
+        ex = 'y'
+        t(a, ex)
+
+        source = 'return {ARGV[1], ARGV[2]}'
+        yield r.eval(source, args=('a', 'b'))
+        sha1 = hashlib.sha1(source).hexdigest()
+        a = yield r.evalsha(sha1, args=('c', 'd'))
+        ex = ['c', 'd']
         t(a, ex)
 
 
