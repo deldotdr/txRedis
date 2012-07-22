@@ -1775,6 +1775,27 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         ex = 3
         t(a, ex)
 
+    @defer.inlineCallbacks
+    def test_eval(self):
+        r = self.redis
+        t = self.assertEqual
+
+        source = ('return "ok"')
+        a = yield r.eval(source)
+        ex = 'ok'
+        t(a, ex)
+
+        source = ('redis.call("SET", KEYS[1], ARGV[1]) '
+                  'return redis.call("GET", KEYS[1])')
+        a = yield r.eval(source, ('test_eval',), ('x',))
+        ex = 'x'
+        t(a, ex)
+
+        source = 'return {ARGV[1], ARGV[2]}'
+        a = yield r.eval(source, args=('a', 'b'))
+        ex = ['a', 'b']
+        t(a, ex)
+
 
 class BlockingListOperartionsTestCase(CommandsBaseTestCase):
     """@todo test timeout

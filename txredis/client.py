@@ -1346,6 +1346,16 @@ class RedisClient(RedisBase):
             dfr.addCallback(post_process)
         return dfr
 
+    # # # # # # # # #
+    # Scripting Commands:
+    # EVAL
+
+    def eval(self, source, keys=(), args=()):
+        keycount = len(keys)
+        args = ['EVAL', source, keycount] + list(keys) + list(args)
+        self._send(*args)
+        return self.getResponse()
+
 
 class HiRedisClient(HiRedisBase, RedisClient):
     """A subclass of the Redis protocol that uses the hiredis library for
