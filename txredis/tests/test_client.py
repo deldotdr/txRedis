@@ -1841,6 +1841,21 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         ex = hashlib.sha1(source).hexdigest()
         t(a, ex)
 
+    @defer.inlineCallbacks
+    def test_script_exists(self):
+        r = self.redis
+        t = self.assertEqual
+
+        source = ('redis.call("SET", KEYS[1], ARGV[1]) '
+                  'return redis.call("GET", KEYS[1])')
+        yield r.script_load(source)
+        script1 = hashlib.sha1(source).hexdigest()
+        script2 = hashlib.sha1('banana').hexdigest()
+
+        a = yield r.script_exists(script1, script2)
+        ex = [True, False]
+        t(a, ex)
+
 
 class BlockingListOperartionsTestCase(CommandsBaseTestCase):
     """@todo test timeout

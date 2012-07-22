@@ -1379,6 +1379,11 @@ class RedisClient(RedisBase):
         self._send(*args)
         return self.getResponse()
 
+    def script_exists(self, *sha1s):
+        args = ['SCRIPT', 'EXISTS'] + list(sha1s)
+        self._send(*args)
+        return self.getResponse()
+
 
 class HiRedisClient(HiRedisBase, RedisClient):
     """A subclass of the Redis protocol that uses the hiredis library for
