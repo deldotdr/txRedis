@@ -267,6 +267,22 @@ class RedisClient(RedisBase):
         self._send('SETBIT', key, offset, value)
         return self.getResponse()
 
+    def bitcount(self, key, start=None, end=None):
+        """
+        Count the number of set bits (population counting) in a string.
+
+        @param key: The Redis key to get bit count from.
+        @param start: Optional starting index for bytes to scan (inclusive)
+        @param end: Optional ending index for bytes to scan (inclusive). End index is
+        required when start is given.
+        """
+        start_end = []
+        if start is not None:
+            start_end.append(start)
+            start_end.append(end)
+        self._send('BITCOUNT', key, *start_end)
+        return self.getResponse()
+
     # Commands operating on the key space
     def keys(self, pattern):
         """
