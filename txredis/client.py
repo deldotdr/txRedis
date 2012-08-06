@@ -244,11 +244,26 @@ class RedisClient(RedisBase):
         self._send('OBJECT', subcommand, key)
         return self.getResponse()
 
+
+    # Bit operations
     def getbit(self, key, offset):
+        """
+        Returns the bit value at offset in the string value stored at key.
+
+        @param key: The Redis key to get bit from.
+        @param offset: The offset to get bit from.
+        """
         self._send('GETBIT', key, offset)
         return self.getResponse()
 
     def setbit(self, key, offset, value):
+        """
+        Sets the bit value at offset in the string value stored at key.
+
+        @param key: The Redis key to set bit on.
+        @param offset: The offset for the bit to set.
+        @param value: The bit value (0 or 1)
+        """
         self._send('SETBIT', key, offset, value)
         return self.getResponse()
 
