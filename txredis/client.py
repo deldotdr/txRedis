@@ -244,6 +244,14 @@ class RedisClient(RedisBase):
         self._send('OBJECT', subcommand, key)
         return self.getResponse()
 
+    def getbit(self, key, offset):
+        self._send('GETBIT', key, offset)
+        return self.getResponse()
+
+    def setbit(self, key, offset, value):
+        self._send('SETBIT', key, offset, value)
+        return self.getResponse()
+
     # Commands operating on the key space
     def keys(self, pattern):
         """
