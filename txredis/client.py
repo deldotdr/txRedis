@@ -244,12 +244,43 @@ class RedisClient(RedisBase):
         self._send('OBJECT', subcommand, key)
         return self.getResponse()
 
+
+    # Bit operations
     def getbit(self, key, offset):
+        """
+        Returns the bit value at offset in the string value stored at key.
+
+        @param key: The Redis key to get bit from.
+        @param offset: The offset to get bit from.
+        """
         self._send('GETBIT', key, offset)
         return self.getResponse()
 
     def setbit(self, key, offset, value):
+        """
+        Sets the bit value at offset in the string value stored at key.
+
+        @param key: The Redis key to set bit on.
+        @param offset: The offset for the bit to set.
+        @param value: The bit value (0 or 1)
+        """
         self._send('SETBIT', key, offset, value)
+        return self.getResponse()
+
+    def bitcount(self, key, start=None, end=None):
+        """
+        Count the number of set bits (population counting) in a string.
+
+        @param key: The Redis key to get bit count from.
+        @param start: Optional starting index for bytes to scan (inclusive)
+        @param end: Optional ending index for bytes to scan (inclusive). End index is
+        required when start is given.
+        """
+        start_end = []
+        if start is not None:
+            start_end.append(start)
+            start_end.append(end)
+        self._send('BITCOUNT', key, *start_end)
         return self.getResponse()
 
     # Commands operating on the key space

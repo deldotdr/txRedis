@@ -651,6 +651,30 @@ class StringsCommandTestCase(CommandsBaseTestCase):
         self.assertEqual(a, 1)
 
 
+    @defer.inlineCallbacks
+    def test_bitcount(self):
+        r = self.redis
+        # TODO tearDown or setUp should flushdb?
+        yield r.delete('bittest')
+
+        yield r.setbit('bittest', 10, 1)
+        yield r.setbit('bittest', 25, 1)
+        yield r.setbit('bittest', 3, 1)
+        ct = yield r.bitcount('bittest')
+        self.assertEqual(ct, 3)
+
+    @defer.inlineCallbacks
+    def test_bitcount_with_start_and_end(self):
+        r = self.redis
+        yield r.delete('bittest')
+
+        yield r.setbit('bittest', 10, 1)
+        yield r.setbit('bittest', 25, 1)
+        yield r.setbit('bittest', 3, 1)
+        ct = yield r.bitcount('bittest', 1, 2)
+        self.assertEqual(ct, 1)
+
+
 class ListsCommandsTestCase(CommandsBaseTestCase):
     """Test commands that operate on lists.
     """
