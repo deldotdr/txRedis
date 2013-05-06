@@ -3,7 +3,7 @@ from setuptools import setup
 
 setup(
     name='txredis',
-    version='2.2',
+    version='2.3',
     packages=['txredis'],
     description='Python/Twisted client for Redis key-value store',
     author='Dorian Raymer',
