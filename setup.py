@@ -18,4 +18,8 @@ setup(
         'License :: OSI Approved :: Apache Software License',
         'Operating System :: OS Independent',
         'Programming Language :: Python',
-        'Framework :: Twisted'])
+        'Framework :: Twisted'],
+    install_requires=[
+        'twisted',
+        'hiredis'
+        ])
