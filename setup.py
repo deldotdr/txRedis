@@ -2,7 +2,7 @@
 sdict = {
     'name' : 'txredis',
     'version' : '2.2',
-	'packages' : ['txredis'],
+    'packages' : ['txredis'],
     'description' : 'Python/Twisted client for Redis key-value store',
     'author' : 'Dorian Raymer',
     'author_email' : 'deldotdr@gmail.com',
