@@ -4,9 +4,11 @@ from twisted.internet import defer
 
 from txredis.protocol import HiRedisProtocol
 
+
 # Hostname and Port number of a redis server
 HOST = 'localhost'
 PORT = 6379
+
 
 @defer.inlineCallbacks
 def main():
@@ -24,6 +26,7 @@ def main():
 
     test = yield redis.get('test')
     print test
+
 
 if __name__ == "__main__":
     main()

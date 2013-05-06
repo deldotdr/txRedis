@@ -13,6 +13,10 @@ class ResponseError(RedisError):
     pass
 
 
+class NoScript(RedisError):
+    pass
+
+
 class InvalidResponse(RedisError):
     pass
 

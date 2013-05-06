@@ -10,8 +10,8 @@ from twisted.trial import unittest
 from txredis.client import Redis
 
 
-REDIS_HOST = 'localhost'
-REDIS_PORT = 6381
+REDIS_HOST = '127.0.0.1'
+REDIS_PORT = 6379
 
 
 class CommandsBaseTestCase(unittest.TestCase):
