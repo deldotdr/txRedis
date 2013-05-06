@@ -4,3 +4,6 @@
 .*.*.swo
 build/*
 _trial_temp/*
+dist
+*.egg-info
+.venv*
