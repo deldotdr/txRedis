@@ -943,7 +943,7 @@ class RedisClient(RedisBase):
             info = dict()
             res = res.split('\r\n')
             for l in res:
-                if not l:
+                if not l or l[0] == '#':
                     continue
                 k, v = l.split(':')
                 info[k] = int(v) if v.isdigit() else v
@@ -1384,6 +1384,68 @@ class RedisClient(RedisBase):
         if withscores:
             dfr.addCallback(post_process)
         return dfr
+
+    # # # # # # # # #
+    # Scripting Commands:
+    # EVAL
+    # EVALSHA
+    # SCRIPT LOAD
+    # SCRIPT EXISTS
+    # SCRIPT FLUSH
+    # SCRIPT KILL
+
+    def eval(self, source, keys=(), args=()):
+        """
+        Evaluate Lua script source with keys and arguments.
+        """
+        keycount = len(keys)
+        args = ['EVAL', source, keycount] + list(keys) + list(args)
+        self._send(*args)
+        return self.getResponse()
+
+    def evalsha(self, sha1, keys=(), args=()):
+        """
+        Evaluate Lua script loaded in script cache under given sha1 with keys
+        and arguments.
+        """
+        keycount = len(keys)
+        args = ['EVALSHA', sha1, keycount] + list(keys) + list(args)
+        self._send(*args)
+        return self.getResponse()
+
+    def script_load(self, source):
+        """
+        Load Lua script source into cache. This returns the SHA1 of the loaded
+        script on success.
+        """
+        args = ['SCRIPT', 'LOAD', source]
+        self._send(*args)
+        return self.getResponse()
+
+    def script_exists(self, *sha1s):
+        """
+        Check whether of no scripts for given sha1 exists in cache. Returns
+        list of booleans.
+        """
+        args = ['SCRIPT', 'EXISTS'] + list(sha1s)
+        self._send(*args)
+        return self.getResponse()
+
+    def script_flush(self):
+        """
+        Flush the script cache.
+        """
+        args = ['SCRIPT', 'FLUSH']
+        self._send(*args)
+        return self.getResponse()
+
+    def script_kill(self):
+        """
+        Kill the currently executing script.
+        """
+        args = ['SCRIPT', 'KILL']
+        self._send(*args)
+        return self.getResponse()
 
 
 class HiRedisClient(HiRedisBase, RedisClient):
