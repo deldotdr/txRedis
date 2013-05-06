@@ -5,8 +5,10 @@ from txredis.protocol import Redis, RedisSubscriber
 
 import sys
 
+
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
+
 
 class Subscriber(RedisSubscriber):
 
@@ -21,17 +23,20 @@ class Subscriber(RedisSubscriber):
     def messageReceived(self, channel, message):
         log.msg("got message %r on channel %s" % (message, channel))
 
+
 @defer.inlineCallbacks
 def getRedisSubscriber():
     clientCreator = protocol.ClientCreator(reactor, Subscriber)
     redis = yield clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
     defer.returnValue(redis)
 
+
 @defer.inlineCallbacks
 def getRedis():
     clientCreator = protocol.ClientCreator(reactor, Redis)
     redis = yield clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
     defer.returnValue(redis)
+
 
 @defer.inlineCallbacks
 def runTest():
@@ -60,4 +65,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
