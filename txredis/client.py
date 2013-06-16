@@ -1177,6 +1177,7 @@ class RedisClient(RedisBase):
     # ZRANGE
     # ZREVRANGE
     # ZRANGEBYSCORE
+    # ZREVRANGEBYSCORE
     # ZCARD
     # ZSCORE
     # ZREMRANGEBYRANK
@@ -1358,14 +1359,19 @@ class RedisClient(RedisBase):
                 return res
         return self.getResponse().addCallback(post_process)
 
-    def zrangebyscore(self, key, min='-inf', max='+inf', offset=None,
-                      count=None, withscores=False):
+    def zrangebyscore(self, key, min='-inf', max='+inf', offset=0,
+                      count=None, withscores=False, reverse=False):
         """
         Return a range of members in a sorted set, by score.
         """
-        args = ['ZRANGEBYSCORE', key, min, max]
-        if offset and count:
+        if reverse:
+            args = ['ZREVRANGEBYSCORE', key, max, min]
+        else:
+            args = ['ZRANGEBYSCORE', key, min, max]
+        if count is not None:
             args.extend(['LIMIT', offset, count])
+        elif offset:
+            raise ValueError("Can't have offset without count")
         if withscores:
             args.append('WITHSCORES')
         self._send(*args)
@@ -1384,6 +1390,11 @@ class RedisClient(RedisBase):
         if withscores:
             dfr.addCallback(post_process)
         return dfr
+
+    def zrevrangebyscore(self, key, min='-inf', max='+inf', offset=0,
+            count=None, withscores=False):
+        return self.zrangebyscore(key, min, max, offset, count, withscores,
+                reverse=True)
 
     # # # # # # # # #
     # Scripting Commands:
