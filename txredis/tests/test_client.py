@@ -11,7 +11,7 @@ from twisted.trial import unittest
 from twisted.trial.unittest import SkipTest
 
 from txredis.client import Redis, RedisSubscriber, RedisClientFactory
-from txredis.exceptions import ResponseError, NoScript, NotBusy
+from txredis.exceptions import InvalidCommand, ResponseError, NoScript, NotBusy
 from txredis.testing import CommandsBaseTestCase, REDIS_HOST, REDIS_PORT
 
 
@@ -1449,7 +1449,7 @@ class HashCommandsTestCase(CommandsBaseTestCase):
         t(a, ex)
 
     @defer.inlineCallbacks
-    def test_hdel_variable(self):
+    def test_hdel(self):
         r = self.redis
         t = self.assertEqual
 
@@ -1462,6 +1462,9 @@ class HashCommandsTestCase(CommandsBaseTestCase):
         a = yield r.hgetall('d')
         ex = {}
         t(a, ex)
+
+    def test_hdel_failure(self):
+        self.assertRaises(InvalidCommand, self.redis.hdel, 'key')
 
     @defer.inlineCallbacks
     def test_hincr(self):

@@ -1115,21 +1115,14 @@ class RedisClient(RedisBase):
         self._send('HEXISTS', key, field)
         return self.getResponse()
 
-    def hdel(self, key, *fields, **kwargs):
+    def hdel(self, key, *fields):
         """
         Removes field from the hash stored at key.
         @param key : Hash key
         @param fields : Sequence of fields to remvoe
-        @param field : For backwards compatibility. Single field to remove.
         """
-        if not kwargs:
+        if fields:
             self._send('HDEL', key, *fields)
-        elif 'field' in kwargs:
-            # XXX this looks like a bug... the 'field' parameter has been
-            # removed from the sig, so this should probably be kwargs['field']
-            # I will address this in the branch that cleans up the unit tests
-            # (since this is obviously missing a unit test...)
-            self._send('HDEL', key, field)
         else:
             raise exceptions.InvalidCommand('Need arguments for HDEL')
         return self.getResponse()
