@@ -8,17 +8,13 @@ import sys
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
 
-@defer.inlineCallbacks
 def getRedisSubscriber():
     clientCreator = protocol.ClientCreator(reactor, RedisSubscriber)
-    redis = yield clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
-    defer.returnValue(redis)
+    return clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
 
-@defer.inlineCallbacks
 def getRedis():
     clientCreator = protocol.ClientCreator(reactor, Redis)
-    redis = yield clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
-    defer.returnValue(redis)
+    return clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
 
 @defer.inlineCallbacks
 def runTest():
