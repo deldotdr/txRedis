@@ -628,6 +628,52 @@ class StringsCommandTestCase(CommandsBaseTestCase):
         ex = -7
         t(a, ex)
 
+    @defer.inlineCallbacks
+    def test_setbit(self):
+        r = self.redis
+        yield r.delete('bittest')
+
+        # original value is 0 when value is empty
+        orig = yield r.setbit('bittest', 0, 1)
+        self.assertEqual(orig, 0)
+
+        # original value is 1 from above
+        orig = yield r.setbit('bittest', 0, 0)
+        self.assertEqual(orig, 1)
+
+    @defer.inlineCallbacks
+    def test_getbit(self):
+        r = self.redis
+        yield r.delete('bittest')
+
+        yield r.setbit('bittest', 10, 1)
+        a = yield r.getbit('bittest', 10)
+        self.assertEqual(a, 1)
+
+
+    @defer.inlineCallbacks
+    def test_bitcount(self):
+        r = self.redis
+        # TODO tearDown or setUp should flushdb?
+        yield r.delete('bittest')
+
+        yield r.setbit('bittest', 10, 1)
+        yield r.setbit('bittest', 25, 1)
+        yield r.setbit('bittest', 3, 1)
+        ct = yield r.bitcount('bittest')
+        self.assertEqual(ct, 3)
+
+    @defer.inlineCallbacks
+    def test_bitcount_with_start_and_end(self):
+        r = self.redis
+        yield r.delete('bittest')
+
+        yield r.setbit('bittest', 10, 1)
+        yield r.setbit('bittest', 25, 1)
+        yield r.setbit('bittest', 3, 1)
+        ct = yield r.bitcount('bittest', 1, 2)
+        self.assertEqual(ct, 1)
+
 
 class ListsCommandsTestCase(CommandsBaseTestCase):
     """Test commands that operate on lists.
