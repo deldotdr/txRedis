@@ -1,4 +1,8 @@
 """
+
+For ongoing work, see the GitHub contributors list at:
+  https://github.com/deldotdr/txRedis/contributors
+
 @author Duncan McGreggor (oubiwann@gmail.com)
 @date 12/21/11
 Reorganized codebase.

@@ -1,4 +1,3 @@
-##############################################
 txredis - asynchronous redis client for Python
 ##############################################
 
@@ -14,15 +13,6 @@ To install hiredis simply:
        pip install -U hiredis
 
 
-Contact
-=======
-There is not a txredis list (yet) but questions can be raised on the
-redis-client mailing list, or you can ask:
-
-- Reza Lotun <rlotun@gmail.com>
-- Dorian Raymer <deldotdr@gmail.com>
-
-
 Bug tracker
 ===========
 
@@ -30,3 +20,11 @@ File bug reports and any other feedback with the issue tracker at
 http://github.com/deldotdr/txRedis/issues/
 
 
+Contact
+=======
+There is no a txRedis list but questions can be raised on the
+redis-client mailing list, or you can ask:
+
+- Garret Heaton <powdahound@gmail.com>
+- Reza Lotun <rlotun@gmail.com>
+- Dorian Raymer <deldotdr@gmail.com>
