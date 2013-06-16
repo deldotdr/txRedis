@@ -135,7 +135,7 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
         a = yield r.get_type('zzz')
         ex = None
         t(a, ex)
-        self.assertTrue(a == None or a == 'none')
+        self.assertTrue(a is None or a == 'none')
 
     @defer.inlineCallbacks
     def test_keys(self):
@@ -181,9 +181,11 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
         t = self.assertEqual
         d = r.rename('a', 'a')
         self.failUnlessFailure(d, ResponseError)
+
         def test_err(a):
             ex = ResponseError('source and destination objects are the same')
             t(str(a), str(ex))
+
         d.addCallback(test_err)
         return d
 
@@ -284,10 +286,10 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
 
         string = 'This is a string'
         r.set('s', string)
-        a = yield r.substr('s', 0, 3) # old name
+        a = yield r.substr('s', 0, 3)  # old name
         ex = 'This'
         t(a, ex)
-        a = yield r.getrange('s', 0, 3) # new name
+        a = yield r.getrange('s', 0, 3)  # new name
         ex = 'This'
         t(a, ex)
 
@@ -390,10 +392,12 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
 
         tme = int(time.time())
         d = r.save()
+
         def done_save(a):
             ex = 'OK'
             t(a, ex)
             d = r.lastsave()
+
             def got_lastsave(a):
                 a = a >= tme
                 ex = True
@@ -451,13 +455,17 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
 
             def step2(_res):
                 d = self.redis.multi()
+
                 def in_multi(_res):
                     d = self.redis.set('foo', 'bar2')
+
                     def step3(_res):
                         d = self.redis.discard()
+
                         def step4(r):
                             self.assertEqual(r, 'OK')
                             d = self.redis.get('foo')
+
                             def got_it(res):
                                 self.assertEqual(res, 'bar1')
                             d.addCallback(got_it)
@@ -652,7 +660,6 @@ class StringsCommandTestCase(CommandsBaseTestCase):
         a = yield r.getbit('bittest', 10)
         self.assertEqual(a, 1)
 
-
     @defer.inlineCallbacks
     def test_bitcount(self):
         r = self.redis
@@ -755,7 +762,6 @@ class ListsCommandsTestCase(CommandsBaseTestCase):
         a = yield r.llen('l')
         ex = 8
         t(a, ex)
-
 
     @defer.inlineCallbacks
     def test_llen(self):
@@ -903,9 +909,11 @@ class ListsCommandsTestCase(CommandsBaseTestCase):
         t = self.assertEqual
 
         d = r.delete('l')
+
         def bad_lset(_res):
             d = r.lset('l', 0, 'a')
             self.failUnlessFailure(d, ResponseError)
+
             def match_err(a):
                 ex = ResponseError('no such key')
                 t(str(a), str(ex))
@@ -919,13 +927,16 @@ class ListsCommandsTestCase(CommandsBaseTestCase):
         t = self.assertEqual
 
         d = r.delete('l')
+
         def proceed(_res):
             d = r.push('l', 'aaa')
+
             def done_push(a):
                 ex = 1
                 t(a, ex)
                 d = r.lset('l', 1, 'a')
                 self.failUnlessFailure(d, ResponseError)
+
                 def check(a):
                     ex = ResponseError('index out of range')
                     t(str(a), str(ex))
@@ -1287,15 +1298,16 @@ class SetsCommandsTestCase(CommandsBaseTestCase):
 
     @defer.inlineCallbacks
     def test_sort_style(self):
-        # considering, given that redis only stores strings, whether the sort it
-        # provides is a numeric or a lexicographical sort; turns out that it's
-        # numeric; i.e. redis is doing implicit type coercion for the sort of
-        # numeric values.  This test serves to document that, and to a lesser
-        # extent check for regression in the implicit str() marshalling of txredis
+        # considering, given that redis only stores strings, whether the
+        # sort it provides is a numeric or a lexicographical sort; turns out
+        # that it's numeric; i.e. redis is doing implicit type coercion for
+        # the sort of numeric values. This test serves to document that, and
+        # to a lesser extent check for regression in the implicit str()
+        # marshalling of txredis
         r = self.redis
         t = self.assertEqual
         yield r.delete('l')
-        items = [ 007, 10, -5, 0.1, 100, -3, 20, 0.02, -3.141 ]
+        items = [007, 10, -5, 0.1, 100, -3, 20, 0.02, -3.141]
         for i in items:
             yield r.push('l', i, tail=True)
         a = yield r.sort('l')
@@ -1365,7 +1377,7 @@ class SetsCommandsTestCase(CommandsBaseTestCase):
 
         for i in range(5):
             key = str(uuid.uuid4())
-            value = random.randrange(10**40000, 11**40000)
+            value = random.randrange(10 ** 40000, 11 ** 40000)
             a = yield r.set(key, value)
             t('OK', a)
             rval = yield r.get(key)
@@ -1401,7 +1413,6 @@ class HashCommandsTestCase(CommandsBaseTestCase):
         a = yield r.hsetnx('h', 'f', 'v')
         ex = 0
         t(a, ex)
-
 
     @defer.inlineCallbacks
     def test_basic(self):
@@ -1455,7 +1466,7 @@ class HashCommandsTestCase(CommandsBaseTestCase):
 
         yield r.delete('d')
         yield r.hset('d', 'a', 'vala')
-        yield r.hmset('d', {'a' : 'vala', 'b' : 'valb', 'c' : 'valc'})
+        yield r.hmset('d', {'a': 'vala', 'b': 'valb', 'c': 'valc'})
         a = yield r.hdel('d', 'a', 'b', 'c')
         ex = 3
         t(a, ex)
@@ -1660,7 +1671,6 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         ex = 1
         t(a, ex)
 
-
     @defer.inlineCallbacks
     def test_zcount(self):
         r = self.redis
@@ -1674,7 +1684,6 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         a = yield r.zcount('z', 1, 3)
         ex = 3
         t(a, ex)
-
 
     @defer.inlineCallbacks
     def test_zremrange(self):
@@ -1766,7 +1775,8 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         ex = [('a', 1.014), ('b', 4.252)]
         t(a, ex)
 
-        a = yield r.zrangebyscore('z', min=1, offset=1, count=2, withscores=True)
+        a = yield r.zrangebyscore('z', min=1, offset=1, count=2,
+                                  withscores=True)
         ex = [('b', 4.252), ('d', 10.425)]
 
     @defer.inlineCallbacks
@@ -1799,7 +1809,8 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         ex = [('b', 4.252), ('a', 1.014)]
         t(a, ex)
 
-        a = yield r.zrevrangebyscore('z', max=10, offset=1, count=2, withscores=True)
+        a = yield r.zrevrangebyscore('z', max=10, offset=1, count=2,
+                                     withscores=True)
         ex = [('a', 1.014), ('c', 0.232)]
 
     @defer.inlineCallbacks
@@ -1814,7 +1825,6 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         yield r.delete('a')
         a = yield r.zrange('a', 0, -1, withscores=True)
         t(a, [])
-
 
     @defer.inlineCallbacks
     def test_zaggregatestore(self):
@@ -1841,7 +1851,7 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         t(a, ex)
 
         yield r.delete('t')
-        a = yield r.zunionstore('t', {'a' : 2.0, 'b' : 2.0})
+        a = yield r.zunionstore('t', {'a': 2.0, 'b': 2.0})
         ex = 3
         t(a, ex)
 
@@ -1850,7 +1860,7 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         t(a, ex)
 
         yield r.delete('t')
-        a = yield r.zunionstore('t', {'a' : 2.0, 'b' : 2.0}, aggregate='MAX')
+        a = yield r.zunionstore('t', {'a': 2.0, 'b': 2.0}, aggregate='MAX')
         ex = 3
         t(a, ex)
 
@@ -1859,7 +1869,7 @@ class SortedSetCommandsTestCase(CommandsBaseTestCase):
         t(a, ex)
 
         yield r.delete('t')
-        a = yield r.zinterstore('t', {'a' : 2.0, 'b' : 2.0}, aggregate='MAX')
+        a = yield r.zinterstore('t', {'a': 2.0, 'b': 2.0}, aggregate='MAX')
         ex = 3
         t(a, ex)
 
@@ -2110,10 +2120,12 @@ class ProtocolTestCase(unittest.TestCase):
     def test_error_response(self):
         # pretending 'foo' is a set, so get is incorrect
         d = self.proto.get("foo")
-        self.assertEquals(self.transport.value(), '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
+        self.assertEquals(self.transport.value(),
+                          '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
         msg = "Operation against a key holding the wrong kind of value"
         self.sendResponse("-%s\r\n" % msg)
         self.failUnlessFailure(d, ResponseError)
+
         def check_err(r):
             self.assertEquals(str(r), msg)
         return d
@@ -2129,7 +2141,8 @@ class ProtocolTestCase(unittest.TestCase):
     @defer.inlineCallbacks
     def test_bulk_response(self):
         d = self.proto.get("foo")
-        self.assertEquals(self.transport.value(), '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
+        self.assertEquals(self.transport.value(),
+                          '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
         self.sendResponse("$3\r\nbar\r\n")
         r = yield d
         self.assertEquals(r, 'bar')
@@ -2156,14 +2169,18 @@ class TestFactory(CommandsBaseTestCase):
 
     def setUp(self):
         d = CommandsBaseTestCase.setUp(self)
+
         def do_setup(_res):
             self.factory = RedisClientFactory()
             reactor.connectTCP(REDIS_HOST, REDIS_PORT, self.factory)
             d = self.factory.deferred
+
             def cannot_connect(_res):
                 raise unittest.SkipTest('Cannot connect to Redis.')
+
             d.addErrback(cannot_connect)
             return d
+
         d.addCallback(do_setup)
         return d
 

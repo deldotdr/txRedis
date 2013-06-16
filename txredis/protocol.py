@@ -63,7 +63,9 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         self._buffer = ''
         self._bulk_length = None
         self._disconnected = False
-        self._multi_bulk_stack = deque() # [[length-remaining, [replies] | None]]
+        # Format of _multi_bulk_stack elements is:
+        # [[length-remaining, [replies] | None]]
+        self._multi_bulk_stack = deque()
         self._request_queue = deque()
 
     def dataReceived(self, data):

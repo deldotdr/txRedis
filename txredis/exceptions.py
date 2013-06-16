@@ -1,6 +1,7 @@
 """
 @file exceptions.py
 """
+
 class RedisError(Exception):
     pass
 

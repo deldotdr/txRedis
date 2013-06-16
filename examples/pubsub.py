@@ -8,13 +8,16 @@ import sys
 REDIS_HOST = 'localhost'
 REDIS_PORT = 6379
 
+
 def getRedisSubscriber():
     clientCreator = protocol.ClientCreator(reactor, RedisSubscriber)
     return clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
 
+
 def getRedis():
     clientCreator = protocol.ClientCreator(reactor, Redis)
     return clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
+
 
 @defer.inlineCallbacks
 def runTest():
@@ -38,4 +41,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

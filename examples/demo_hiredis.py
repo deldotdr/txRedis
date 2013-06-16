@@ -8,6 +8,7 @@ from txredis.protocol import HiRedisProtocol
 HOST = 'localhost'
 PORT = 6379
 
+
 @defer.inlineCallbacks
 def main():
     clientCreator = protocol.ClientCreator(reactor, HiRedisProtocol)

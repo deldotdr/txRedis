@@ -225,12 +225,13 @@ class RedisClient(RedisBase):
         """
         Inspect the internals of Redis objects.
         @param key : The Redis key you want to inspect
-        @param refcount : Returns the number of refereces of the value
-                          associated with the specified key.
-        @param encoding : Returns the kind of internal representation for value.
-        @param idletime Returns the number of seconds since the object stored
-                        at the specified key is idle. (Currently the actual
-                        resolution is 10 seconds.)
+        @param refcount: Returns the number of refereces of the value
+                         associated with the specified key.
+        @param encoding: Returns the kind of internal representation for
+                         value.
+        @param idletime: Returns the number of seconds since the object stored
+                         at the specified key is idle. (Currently the actual
+                         resolution is 10 seconds.)
         """
         subcommand = ''
         if idletime:
@@ -243,7 +244,6 @@ class RedisClient(RedisBase):
             raise exceptions.InvalidCommand('Need a subcommand')
         self._send('OBJECT', subcommand, key)
         return self.getResponse()
-
 
     # Bit operations
     def getbit(self, key, offset):
@@ -273,8 +273,8 @@ class RedisClient(RedisBase):
 
         @param key: The Redis key to get bit count from.
         @param start: Optional starting index for bytes to scan (inclusive)
-        @param end: Optional ending index for bytes to scan (inclusive). End index is
-        required when start is given.
+        @param end: Optional ending index for bytes to scan (inclusive).
+                    End index is required when start is given.
         """
         start_end = []
         if start is not None:
@@ -1185,10 +1185,11 @@ class RedisClient(RedisBase):
         @param member : For backwards compatibility, member name.
         @param score : For backwards compatibility, score.
 
-        NOTE: if there are only two arguments, the order is interpreted as (value, score)
-              for backwards compatibility reasons.
+        NOTE: If there are only two arguments, the order is interpreted
+              as (value, score) for backwards compatibility reasons.
         """
-        if not kwargs and len(item_tuples) == 2 and isinstance(item_tuples[0], basestring):
+        if not kwargs and len(item_tuples) == 2 and \
+           isinstance(item_tuples[0], basestring):
             self._send('ZADD', key, item_tuples[1], item_tuples[0])
         elif not kwargs:
             self._send('ZADD', key, *item_tuples)
@@ -1204,7 +1205,8 @@ class RedisClient(RedisBase):
         Remove members from a sorted set
         @param key : Sorted set key
         @param members : Sequeunce of members to remove
-        @param member : For backwards compatibility - if specified remove one member.
+        @param member : For backwards compatibility - if specified remove
+                        one member.
         """
         if not kwargs:
             self._send('ZREM', key, *members)
