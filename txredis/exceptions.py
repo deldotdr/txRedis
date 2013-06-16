@@ -17,6 +17,10 @@ class NoScript(RedisError):
     pass
 
 
+class NotBusy(RedisError):
+    pass
+
+
 class InvalidResponse(RedisError):
     pass
 

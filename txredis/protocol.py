@@ -184,11 +184,15 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
     def errorReceived(self, data):
         """Error response received."""
-        if data[:9] == 'NOSCRIPT ':
+        if data[:4] == 'ERR ':
+            reply = exceptions.ResponseError(data[4:])
+        elif data[:9] == 'NOSCRIPT ':
             reply = exceptions.NoScript(data[9:])
+        elif data[:8] == 'NOTBUSY ':
+            reply = exceptions.NotBusy(data[8:])
         else:
-            reply = exceptions.ResponseError(
-                data if data[:4] == 'ERR ' else data)
+            reply = exceptions.ResponseError(data)
+
         if self._request_queue:
             # properly errback this reply
             self._request_queue.popleft().errback(reply)

@@ -11,7 +11,7 @@ from twisted.trial import unittest
 from twisted.trial.unittest import SkipTest
 
 from txredis.client import Redis, RedisSubscriber, RedisClientFactory
-from txredis.exceptions import ResponseError, NoScript
+from txredis.exceptions import ResponseError, NoScript, NotBusy
 from txredis.testing import CommandsBaseTestCase, REDIS_HOST, REDIS_PORT
 
 
@@ -182,7 +182,7 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
         d = r.rename('a', 'a')
         self.failUnlessFailure(d, ResponseError)
         def test_err(a):
-            ex = ResponseError('ERR source and destination objects are the same')
+            ex = ResponseError('source and destination objects are the same')
             t(str(a), str(ex))
         d.addCallback(test_err)
         return d
@@ -907,7 +907,7 @@ class ListsCommandsTestCase(CommandsBaseTestCase):
             d = r.lset('l', 0, 'a')
             self.failUnlessFailure(d, ResponseError)
             def match_err(a):
-                ex = ResponseError('ERR no such key')
+                ex = ResponseError('no such key')
                 t(str(a), str(ex))
             d.addCallback(match_err)
             return d
@@ -927,7 +927,7 @@ class ListsCommandsTestCase(CommandsBaseTestCase):
                 d = r.lset('l', 1, 'a')
                 self.failUnlessFailure(d, ResponseError)
                 def check(a):
-                    ex = ResponseError('ERR index out of range')
+                    ex = ResponseError('index out of range')
                     t(str(a), str(ex))
                 d.addCallback(check)
                 return d
@@ -1949,12 +1949,12 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         t = self.assertEqual
 
         def eb(why):
-            t(str(why.value), 'NOTBUSY No scripts in execution right now.')
+            t(str(why.value), 'No scripts in execution right now.')
             return why
 
         d = r.script_kill()
         d.addErrback(eb)
-        self.assertFailure(d, ResponseError)
+        self.assertFailure(d, NotBusy)
 
         return d
 
