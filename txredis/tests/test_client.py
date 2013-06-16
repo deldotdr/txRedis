@@ -1949,7 +1949,7 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         t = self.assertEqual
 
         def eb(why):
-            t(str(why.value), 'ERR No scripts in execution right now.')
+            t(str(why.value), 'NOTBUSY No scripts in execution right now.')
             return why
 
         d = r.script_kill()
