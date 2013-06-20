@@ -1583,7 +1583,6 @@ class RedisClientFactory(ReconnectingClientFactory):
     protocol = RedisClient
 
     def __init__(self, *args, **kwargs):
-        self.noisy = True
         self._args = args
         self._kwargs = kwargs
         self.client = None
