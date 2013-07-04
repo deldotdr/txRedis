@@ -4,12 +4,12 @@
 
 ## Install
 
-Install via [pip](https://pypi.python.org/pypi/pip).
+Install via [pip](https://pypi.python.org/pypi/pip). Usage examples can be found in the examples/ directory of this repository.
 
 > pip install txredis
 
 Included are two protocol implementations, one using a custom Twisted
-based protocol parser, and another using the [hiredis](https://github.com/pietern/hiredis-py) protocol parser. If you would like to use hiredis, simply install it:
+based protocol parser, and another using the [hiredis](https://github.com/pietern/hiredis-py) protocol parser. If you would like to use hiredis, simply install it via pip and use the provided `HiRedisClient` protocol:
 
 > pip install -U hiredis
 
