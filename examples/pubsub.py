@@ -1,7 +1,7 @@
 from twisted.internet import reactor, protocol, defer
 from twisted.python import log
 
-from txredis.protocol import Redis, RedisSubscriber
+from txredis.client import RedisClient, RedisSubscriber
 
 import sys
 
@@ -15,7 +15,7 @@ def getRedisSubscriber():
 
 
 def getRedis():
-    clientCreator = protocol.ClientCreator(reactor, Redis)
+    clientCreator = protocol.ClientCreator(reactor, RedisClient)
     return clientCreator.connectTCP(REDIS_HOST, REDIS_PORT)
 
 
@@ -31,6 +31,8 @@ def runTest():
     log.msg("redis2: PUBLISH w00t 'Hello, world!'")
     response = yield redis2.publish("w00t", "Hello, world!")
     log.msg("published to w00t, response = %r" % response)
+
+    reactor.stop()
 
 
 def main():

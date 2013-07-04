@@ -2,7 +2,7 @@ from twisted.internet import reactor
 from twisted.internet import protocol
 from twisted.internet import defer
 
-from txredis.protocol import Redis
+from txredis.client import RedisClient
 
 # Hostname and Port number of a redis server
 HOST = 'localhost'
@@ -11,7 +11,7 @@ PORT = 6379
 
 @defer.inlineCallbacks
 def main():
-    clientCreator = protocol.ClientCreator(reactor, Redis)
+    clientCreator = protocol.ClientCreator(reactor, RedisClient)
     redis = yield clientCreator.connectTCP(HOST, PORT)
 
     res = yield redis.ping()
@@ -25,6 +25,8 @@ def main():
 
     test = yield redis.get('test')
     print test
+
+    reactor.stop()
 
 if __name__ == "__main__":
     main()
