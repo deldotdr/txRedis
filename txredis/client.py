@@ -1484,10 +1484,10 @@ class RedisSubscriber(RedisBase):
         """
         if reply[0] == u"message":
             channel, message = reply[1:]
-            self.messageReceived(channel, message)
+            self.messageReceived(channel, message, channel)
         elif reply[0] == u"pmessage":
             pattern, channel, message = reply[1:]
-            self.messageReceived(channel, message)
+            self.messageReceived(channel, message, pattern)
         elif reply[0] == u"subscribe":
             channel, numSubscribed = reply[1:]
             self.channelSubscribed(channel, numSubscribed)
@@ -1503,7 +1503,7 @@ class RedisSubscriber(RedisBase):
         else:
             RedisBase.handleCompleteMultiBulkData(self, reply)
 
-    def messageReceived(self, channel, message):
+    def messageReceived(self, channel, message, pattern):
         """
         Called when this connection is subscribed to a channel that
         has received a message published on it.
