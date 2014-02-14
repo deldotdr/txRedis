@@ -334,7 +334,7 @@ class RedisClient(RedisBase):
         """
         copy a value of a key to another (via DUMP-RESTORE methods)
         """
-        return self.dump(src).addCallback(lambda dump: self.retore(dest,dump,ttlOfDest))
+        return self.dump(src).addCallback(lambda dump: self.restore(dest,dump,ttlOfDest))
 
     def dbsize(self):
         """
