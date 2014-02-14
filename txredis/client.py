@@ -335,6 +335,13 @@ class RedisClient(RedisBase):
         """
         self._send('EXPIREAT', key, time)
         return self.getResponse()
+    
+    def persist(self, key):
+        """
+        Remove the existing timeout on key
+        """
+        self._send('PERSIST', key)
+        return self.getResponse()
 
     def ttl(self, key):
         """
