@@ -322,12 +322,12 @@ class RedisClient(RedisBase):
         self._send('DUMP',key)
         return self.getResponse()
         
-    def restore(self, key, serialized-value,ttl=0):
+    def restore(self, key, serializedValue,ttl=0):
         """
         Restore a key by a rerialized-value (see dump method)
         note that serialized-value and ttl is not in the same order then Redis api
         """
-        self._send('RESTORE',key, ttl, serialized-value)
+        self._send('RESTORE',key, ttl, serializedValue)
         return self.getResponse()
         
     def copy(self, src, dest, ttlOfDest=0):
