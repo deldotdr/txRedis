@@ -492,7 +492,37 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
         yield self.redis.watch('foo')
         r = yield self.redis.unwatch()
         self.assertEqual(r, 'OK')
+    
+    @defer.inlineCallbacks
+    def test_persist(self):
+        yield self.redis.set("persist_test","titi")
+        yield self.redis.expire('persist_test',1000)
+        yield self.redis.persist('persist_test')
+        ttl = yield self.redis.ttl('persist_test')
+        self.assertEqual(ttl,-1)
+    
+    @defer.inlineCallbacks
+    def test_dump(self):
+        yield self.redis.set("mykey",10)
+        dump = yield self.redis.dump("mykey")
+        self.assertEqual(dump,r"\x00\xc0\n\x06\x00\xf8r?\xc5\xfb\xfb_(")
 
+    @defer.inlineCallbacks
+    def test_restore(self):
+        yield self.redis.set("mykey",10)
+        dump = yield self.redis.dump("mykey")
+        yield self.redis.delete("mykey")
+        yield self.redis.restore("mykey",dump)
+        newval = yield self.redis.get("mykey")
+        self.assertEqual(newval,10)
+
+    @defer.inlineCallbacks
+    def test_copy(self):
+        yield self.redis.set("mykey",10)
+        yield self.redis.copy("mykey","mykey2")
+        mykey2 = yield self.redis.get("mykey2")
+        self.assertEqual(10,mykey2)
+        
 
 class StringsCommandTestCase(CommandsBaseTestCase):
     """Test commands that operate on string values.
