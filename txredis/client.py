@@ -315,6 +315,27 @@ class RedisClient(RedisBase):
         self._send('RENAMENX' if preserve else 'RENAME', src, dst)
         return self.getResponse()
 
+    def dump(self, key):
+        """
+        Dump a key
+        """
+        self._send('DUMP',key)
+        return self.getResponse()
+        
+    def restore(self, key, serialized-value,ttl=0):
+        """
+        Restore a key by a rerialized-value (see dump method)
+        note that serialized-value and ttl is not in the same order then Redis api
+        """
+        self._send('RESTORE',key, ttl, serialized-value)
+        return self.getResponse()
+        
+    def copy(self, src, dest, ttlOfDest=0):
+        """
+        copy a value of a key to another (via DUMP-RESTORE methods)
+        """
+        return self.dump(src).addCallback(lambda dump: self.retore(dest,dump,ttlOfDest))
+
     def dbsize(self):
         """
         Return the number of keys in the selected database
