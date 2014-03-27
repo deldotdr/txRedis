@@ -967,7 +967,7 @@ class RedisClient(RedisBase):
             stmt.extend(['GET', get])
         elif isinstance(get, list) or isinstance(get, tuple):
             for g in get:
-                stmt.extend(['GET', get])
+                stmt.extend(['GET', g])
         else:
             raise exceptions.RedisError(
                 "Invalid parameter 'get' for Redis sort")
