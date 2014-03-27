@@ -1358,11 +1358,15 @@ class SetsCommandsTestCase(CommandsBaseTestCase):
         t(a, ex)
         for i in (yield r.sort('l', desc=True)):
             yield r.set('test_%s' % i, 100 - float(i))
+            yield r.set('second_test_%s' % i, 200 - float(i))
         a = yield r.sort('l', desc=True, get='test_*')
         ex = s([99.0, 99.5, 99.6666666667, 99.75])
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*', get='test_*')
         ex = s([99.5, 99.0, 99.6666666667, 99.75])
+        t(a, ex)
+        a = yield r.sort('l', desc=True, by='weight_*', get=['test_*', 'second_test_*'])
+        ex = s([99.5, 199.5, 99.0, 199.0, 99.6666666667, 199.6666666667, 99.75, 199.75])
         t(a, ex)
         a = yield r.sort('l', desc=True, by='weight_*', get='missing_*')
         ex = [None, None, None, None]
