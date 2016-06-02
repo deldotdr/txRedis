@@ -35,6 +35,6 @@ project page).
 @brief Twisted compatible version of redis.py
 """
 # for backwards compatibility
-from client import *
-from exceptions import *
-from protocol import *
+from txredis.client import *
+from txredis.exceptions import *
+from txredis.protocol import *

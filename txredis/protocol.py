@@ -37,6 +37,8 @@ Redis google code project: http://code.google.com/p/redis/
 Command doc strings taken from the CommandReference wiki page.
 
 """
+import six
+
 from collections import deque
 
 from twisted.internet import defer, protocol
@@ -278,12 +280,12 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
     def _encode(self, s):
         """Encode a value for sending to the server."""
-        if isinstance(s, str):
+        if isinstance(s, six.text_type):
             return s
-        if isinstance(s, unicode):
+        if isinstance(s, six.text_type):
             try:
                 return s.encode(self.charset, self.errors)
-            except UnicodeEncodeError, e:
+            except UnicodeEncodeError as e:
                 raise exceptions.InvalidData(
                     "Error encoding unicode value '%s': %s" % (
                         s.encode(self.charset, 'replace'), e))
@@ -300,7 +302,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             v = self._encode(i)
             cmds.append('$%s\r\n%s\r\n' % (len(v), v))
         cmd = '*%s\r\n' % len(args) + ''.join(cmds)
-        self.transport.write(cmd)
+        self.transport.write(str.encode(cmd))
 
     def send(self, command, *args):
         self._send(command, *args)
@@ -341,7 +343,7 @@ class HiRedisBase(RedisBase):
             if isinstance(res, exceptions.ResponseError):
                 self._request_queue.popleft().errback(res)
             else:
-                if isinstance(res, basestring) and res == 'none':
+                if isinstance(res, six.text_type) and res == 'none':
                     res = None
                 self._request_queue.popleft().callback(res)
             res = self._reader.gets()

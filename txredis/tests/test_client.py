@@ -1307,7 +1307,7 @@ class SetsCommandsTestCase(CommandsBaseTestCase):
         r = self.redis
         t = self.assertEqual
         yield r.delete('l')
-        items = [007, 10, -5, 0.1, 100, -3, 20, 0.02, -3.141]
+        items = [7, 10, -5, 0.1, 100, -3, 20, 0.02, -3.141]
         for i in items:
             yield r.push('l', i, tail=True)
         a = yield r.sort('l')
@@ -2125,7 +2125,7 @@ class ProtocolTestCase(unittest.TestCase):
         # pretending 'foo' is a set, so get is incorrect
         d = self.proto.get("foo")
         self.assertEquals(self.transport.value(),
-                          '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
+                          b'*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
         msg = "Operation against a key holding the wrong kind of value"
         self.sendResponse("-%s\r\n" % msg)
         self.failUnlessFailure(d, ResponseError)
@@ -2137,7 +2137,7 @@ class ProtocolTestCase(unittest.TestCase):
     @defer.inlineCallbacks
     def test_singleline_response(self):
         d = self.proto.ping()
-        self.assertEquals(self.transport.value(), '*1\r\n$4\r\nPING\r\n')
+        self.assertEquals(self.transport.value(), b'*1\r\n$4\r\nPING\r\n')
         self.sendResponse("+PONG\r\n")
         r = yield d
         self.assertEquals(r, 'PONG')
@@ -2146,7 +2146,7 @@ class ProtocolTestCase(unittest.TestCase):
     def test_bulk_response(self):
         d = self.proto.get("foo")
         self.assertEquals(self.transport.value(),
-                          '*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
+                          b'*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n')
         self.sendResponse("$3\r\nbar\r\n")
         r = yield d
         self.assertEquals(r, 'bar')
@@ -2154,7 +2154,7 @@ class ProtocolTestCase(unittest.TestCase):
     @defer.inlineCallbacks
     def test_multibulk_response(self):
         d = self.proto.lrange("foo", 0, 1)
-        expected = '*4\r\n$6\r\nLRANGE\r\n$3\r\nfoo\r\n$1\r\n0\r\n$1\r\n1\r\n'
+        expected = b'*4\r\n$6\r\nLRANGE\r\n$3\r\nfoo\r\n$1\r\n0\r\n$1\r\n1\r\n'
         self.assertEquals(self.transport.value(), expected)
         self.sendResponse("*2\r\n$3\r\nbar\r\n$6\r\nlolwut\r\n")
         r = yield d
@@ -2163,7 +2163,7 @@ class ProtocolTestCase(unittest.TestCase):
     @defer.inlineCallbacks
     def test_integer_response(self):
         d = self.proto.dbsize()
-        self.assertEquals(self.transport.value(), '*1\r\n$6\r\nDBSIZE\r\n')
+        self.assertEquals(self.transport.value(), b'*1\r\n$6\r\nDBSIZE\r\n')
         self.sendResponse(":1234\r\n")
         r = yield d
         self.assertEquals(r, 1234)
