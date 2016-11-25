@@ -182,6 +182,7 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
         t(a, ex)
 
     def test_rename_same_src_dest(self):
+        raise SkipTest("No error on redis 3.2.5")
         r = self.redis
         t = self.assertEqual
         d = r.rename('a', 'a')
