@@ -17,6 +17,7 @@ sdict = {
         'Operating System :: OS Independent',
         'Programming Language :: Python',
         'Framework :: Twisted'],
+    'install_requires': ['six'],
 }
 
 from setuptools import setup
