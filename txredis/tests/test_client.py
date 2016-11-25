@@ -521,7 +521,7 @@ class StringsCommandTestCase(CommandsBaseTestCase):
         self.assertEqual(a, 'OK')
 
         a = yield self.redis.get('a')
-        self.assertEqual(a, unicode_str.encode('utf8'))
+        self.assertEqual(a, unicode_str)
 
         a = yield self.redis.set('b', 105.2)
         self.assertEqual(a, 'OK')
