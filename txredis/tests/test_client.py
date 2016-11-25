@@ -33,7 +33,7 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
         t = self.assertEqual
         a = yield self.redis.get_config('*')
         self.assertTrue(isinstance(a, dict))
-        self.assertTrue('dbfilename' in a)
+        self.assertIn('dbfilename', a)
 
         a = yield self.redis.set_config('dbfilename', 'dump.rdb.tmp')
         ex = 'OK'
