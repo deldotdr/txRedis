@@ -1930,22 +1930,22 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         r = self.redis
         t = self.assertEqual
 
-        source = 'return "ok"'
+        source = b'return "ok"'
         yield r.eval(source)
         sha1 = hashlib.sha1(source).hexdigest()
         a = yield r.evalsha(sha1)
         ex = 'ok'
         t(a, ex)
 
-        source = ('redis.call("SET", KEYS[1], ARGV[1]) '
-                  'return redis.call("GET", KEYS[1])')
+        source = (b'redis.call("SET", KEYS[1], ARGV[1]) '
+                  b'return redis.call("GET", KEYS[1])')
         yield r.eval(source, ('test_eval2',), ('x',))
         sha1 = hashlib.sha1(source).hexdigest()
         a = yield r.evalsha(sha1, ('test_eval3',), ('y',))
         ex = 'y'
         t(a, ex)
 
-        source = 'return {ARGV[1], ARGV[2]}'
+        source = b'return {ARGV[1], ARGV[2]}'
         yield r.eval(source, args=('a', 'b'))
         sha1 = hashlib.sha1(source).hexdigest()
         a = yield r.evalsha(sha1, args=('c', 'd'))
@@ -1954,7 +1954,7 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
 
     def test_no_script(self):
         r = self.redis
-        sha1 = hashlib.sha1('banana').hexdigest()
+        sha1 = hashlib.sha1(b'banana').hexdigest()
         d = r.evalsha(sha1)
         self.assertFailure(d, NoScript)
         return d
@@ -1964,8 +1964,8 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         r = self.redis
         t = self.assertEqual
 
-        source = ('redis.call("SET", KEYS[1], ARGV[1]) '
-                  'return redis.call("GET", KEYS[1])')
+        source = (b'redis.call("SET", KEYS[1], ARGV[1]) '
+                  b'return redis.call("GET", KEYS[1])')
         a = yield r.script_load(source)
         ex = hashlib.sha1(source).hexdigest()
         t(a, ex)
@@ -1975,11 +1975,11 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         r = self.redis
         t = self.assertEqual
 
-        source = ('redis.call("SET", KEYS[1], ARGV[1]) '
-                  'return redis.call("GET", KEYS[1])')
+        source = (b'redis.call("SET", KEYS[1], ARGV[1]) '
+                  b'return redis.call("GET", KEYS[1])')
         yield r.script_load(source)
         script1 = hashlib.sha1(source).hexdigest()
-        script2 = hashlib.sha1('banana').hexdigest()
+        script2 = hashlib.sha1(b'banana').hexdigest()
 
         a = yield r.script_exists(script1, script2)
         ex = [True, False]
@@ -1990,11 +1990,11 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         r = self.redis
         t = self.assertEqual
 
-        source = ('redis.call("SET", KEYS[1], ARGV[1]) '
-                  'return redis.call("GET", KEYS[1])')
+        source = (b'redis.call("SET", KEYS[1], ARGV[1]) '
+                  b'return redis.call("GET", KEYS[1])')
         yield r.script_load(source)
         script1 = hashlib.sha1(source).hexdigest()
-        source = 'return "ok"'
+        source = b'return "ok"'
         yield r.script_load(source)
         script2 = hashlib.sha1(source).hexdigest()
 
