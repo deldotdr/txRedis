@@ -1914,8 +1914,8 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
 
         source = 'return "ok"'
         a = yield r.eval(source)
-        ex = 'ok'
-        t(a, ex)
+        ex = 'OK'
+        t(a.upper(), ex)
 
         source = ('redis.call("SET", KEYS[1], ARGV[1]) '
                   'return redis.call("GET", KEYS[1])')
@@ -1937,8 +1937,8 @@ class ScriptingCommandsTestCase(CommandsBaseTestCase):
         yield r.eval(source)
         sha1 = hashlib.sha1(source).hexdigest()
         a = yield r.evalsha(sha1)
-        ex = 'ok'
-        t(a, ex)
+        ex = 'OK'
+        t(a.upper(), ex)
 
         source = (b'redis.call("SET", KEYS[1], ARGV[1]) '
                   b'return redis.call("GET", KEYS[1])')
