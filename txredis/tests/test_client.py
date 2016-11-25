@@ -631,7 +631,7 @@ class StringsCommandTestCase(CommandsBaseTestCase):
         t = self.assertEqual
 
         a = yield r.get('a')
-        if a:
+        if a is not None:
             yield r.delete('a')
 
         a = yield r.decr('a')
