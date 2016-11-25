@@ -1550,8 +1550,8 @@ class HashCommandsTestCase(CommandsBaseTestCase):
         yield r.hmset('d', in_dict)
 
         a = yield r.hkeys('d')
-        ex = ['k', 'j']
-        t(a, ex)
+        ex = {'k', 'j'}
+        t(set(a), ex)
 
     @defer.inlineCallbacks
     def test_hvals(self):
@@ -1563,8 +1563,8 @@ class HashCommandsTestCase(CommandsBaseTestCase):
         yield r.hmset('d', in_dict)
 
         a = yield r.hvals('d')
-        ex = ['v', 'p']
-        t(a, ex)
+        ex = {'v', 'p'}
+        t(set(a), ex)
 
 
 class LargeMultiBulkTestCase(CommandsBaseTestCase):
