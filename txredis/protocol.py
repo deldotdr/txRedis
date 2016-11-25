@@ -194,14 +194,14 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
     def errorReceived(self, data):
         """Error response received."""
-        if data[:4] == 'ERR ':
-            reply = exceptions.ResponseError(data[4:])
-        elif data[:9] == 'NOSCRIPT ':
-            reply = exceptions.NoScript(data[9:])
-        elif data[:8] == 'NOTBUSY ':
-            reply = exceptions.NotBusy(data[8:])
+        if data[:4] == b'ERR ':
+            reply = exceptions.ResponseError(data[4:].decode(self.charset))
+        elif data[:9] == b'NOSCRIPT ':
+            reply = exceptions.NoScript(data[9:].decode(self.charset))
+        elif data[:8] == b'NOTBUSY ':
+            reply = exceptions.NotBusy(data[8:].decode(self.charset))
         else:
-            reply = exceptions.ResponseError(data)
+            reply = exceptions.ResponseError(data.decode(self.charset))
 
         if self._request_queue:
             # properly errback this reply
@@ -216,7 +216,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
             # should this happen here in the client?
             reply = None
         else:
-            reply = data
+            reply = data.decode(self.charset)
 
         self.responseReceived(reply)
 
@@ -243,6 +243,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     def bulkDataReceived(self, data):
         """Bulk data response received."""
         self._bulk_length = None
+        if isinstance(data, bytes):
+            data = data.decode(self.charset)
         self.responseReceived(data)
 
     def multiBulkDataReceived(self):
