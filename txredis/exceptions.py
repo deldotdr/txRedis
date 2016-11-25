@@ -1,6 +1,8 @@
 """
 @file exceptions.py
 """
+from __future__ import unicode_literals
+
 
 class RedisError(Exception):
     pass

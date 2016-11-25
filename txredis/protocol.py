@@ -37,22 +37,28 @@ Redis google code project: http://code.google.com/p/redis/
 Command doc strings taken from the CommandReference wiki page.
 
 """
+from __future__ import unicode_literals
+
 from collections import deque
 
+from six import PY3
 from twisted.internet import defer, protocol
 from twisted.protocols import policies
 
 from txredis import exceptions
 
+if PY3:
+    unicode = str
+
 
 class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     """The main Redis client."""
 
-    ERROR = "-"
-    SINGLE_LINE = "+"
-    INTEGER = ":"
-    BULK = "$"
-    MULTI_BULK = "*"
+    ERROR = b"-"
+    SINGLE_LINE = b"+"
+    INTEGER = b":"
+    BULK = b"$"
+    MULTI_BULK = b"*"
 
     def __init__(self, db=None, password=None, charset='utf8',
                  errors='strict'):
@@ -60,7 +66,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         self.db = db if db is not None else 0
         self.password = password
         self.errors = errors
-        self._buffer = ''
+        self._buffer = b''
         self._bulk_length = None
         self._disconnected = False
         # Format of _multi_bulk_stack elements is:
@@ -90,16 +96,16 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
                 continue
 
             # wait until we have a line
-            if '\r\n' not in self._buffer:
+            if b'\r\n' not in self._buffer:
                 return
 
             # grab a line
-            line, self._buffer = self._buffer.split('\r\n', 1)
+            line, self._buffer = self._buffer.split(b'\r\n', 1)
             if len(line) == 0:
                 continue
 
             # first byte indicates reply type
-            reply_type = line[0]
+            reply_type = line[0:1]
             reply_data = line[1:]
 
             # Error message (-)
@@ -141,6 +147,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
                     self._multi_bulk_stack.append([multi_bulk_length, []])
                     if multi_bulk_length == 0:
                         self.multiBulkDataReceived()
+            else:
+                raise exceptions.InvalidData("Unexpected reply_type: %r", reply_type)
 
     def failRequests(self, reason):
         while self._request_queue:
@@ -186,14 +194,14 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
     def errorReceived(self, data):
         """Error response received."""
-        if data[:4] == 'ERR ':
-            reply = exceptions.ResponseError(data[4:])
-        elif data[:9] == 'NOSCRIPT ':
-            reply = exceptions.NoScript(data[9:])
-        elif data[:8] == 'NOTBUSY ':
-            reply = exceptions.NotBusy(data[8:])
+        if data[:4] == b'ERR ':
+            reply = exceptions.ResponseError(data[4:].decode(self.charset))
+        elif data[:9] == b'NOSCRIPT ':
+            reply = exceptions.NoScript(data[9:].decode(self.charset))
+        elif data[:8] == b'NOTBUSY ':
+            reply = exceptions.NotBusy(data[8:].decode(self.charset))
         else:
-            reply = exceptions.ResponseError(data)
+            reply = exceptions.ResponseError(data.decode(self.charset))
 
         if self._request_queue:
             # properly errback this reply
@@ -204,11 +212,11 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
     def singleLineReceived(self, data):
         """Single line response received."""
-        if data == 'none':
+        if data == b'none':
             # should this happen here in the client?
             reply = None
         else:
-            reply = data
+            reply = data.decode(self.charset)
 
         self.responseReceived(reply)
 
@@ -235,6 +243,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     def bulkDataReceived(self, data):
         """Bulk data response received."""
         self._bulk_length = None
+        if isinstance(data, bytes):
+            data = data.decode(self.charset)
         self.responseReceived(data)
 
     def multiBulkDataReceived(self):
@@ -278,16 +288,19 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
     def _encode(self, s):
         """Encode a value for sending to the server."""
-        if isinstance(s, str):
-            return s
+        if not isinstance(s, (unicode, str, bytes)):
+            s = str(s)
+        # we made "unicode" an alias for "str" on Python 3 at the head of the file
         if isinstance(s, unicode):
             try:
                 return s.encode(self.charset, self.errors)
-            except UnicodeEncodeError, e:
+            except UnicodeEncodeError as e:
                 raise exceptions.InvalidData(
                     "Error encoding unicode value '%s': %s" % (
                         s.encode(self.charset, 'replace'), e))
-        return str(s)
+        if isinstance(s, (str, bytes)):
+            return s
+        raise exceptions.InvalidData("Unexpected data: %r" % s)
 
     def _send(self, *args):
         """Encode and send a request
@@ -298,8 +311,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         cmds = []
         for i in args:
             v = self._encode(i)
-            cmds.append('$%s\r\n%s\r\n' % (len(v), v))
-        cmd = '*%s\r\n' % len(args) + ''.join(cmds)
+            cmds.append(b'$%d\r\n%s\r\n' % (len(v), v))
+        cmd = b'*%d\r\n' % len(args) + b''.join(cmds)
         self.transport.write(cmd)
 
     def send(self, command, *args):

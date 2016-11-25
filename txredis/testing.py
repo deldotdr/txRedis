@@ -3,6 +3,8 @@
 
 This module provides the basic needs to run txRedis unit tests.
 """
+from __future__ import unicode_literals
+
 from twisted.internet import protocol
 from twisted.internet import reactor
 from twisted.trial import unittest

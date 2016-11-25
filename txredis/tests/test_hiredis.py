@@ -1,3 +1,5 @@
+from __future__ import unicode_literals
+
 # if hiredis and its python wrappers are installed, test them too
 try:
     import hiredis
