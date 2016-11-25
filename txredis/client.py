@@ -1,6 +1,7 @@
 """
 @file client.py
 """
+from __future__ import unicode_literals
 import itertools
 
 from twisted.internet import defer

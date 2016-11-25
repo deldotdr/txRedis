@@ -37,6 +37,8 @@ Redis google code project: http://code.google.com/p/redis/
 Command doc strings taken from the CommandReference wiki page.
 
 """
+from __future__ import unicode_literals
+
 from collections import deque
 
 from twisted.internet import defer, protocol
