@@ -4,6 +4,13 @@
 from __future__ import unicode_literals
 import itertools
 
+try:
+    from itertools import izip
+except ImportError:  # python 3.x
+    izip = zip
+
+import six
+from six.moves import range
 from twisted.internet import defer
 from twisted.internet.protocol import ReconnectingClientFactory
 
@@ -75,7 +82,7 @@ class RedisClient(RedisBase):
             res = {}
             if not values:
                 return res
-            for i in xrange(0, len(values) - 1, 2):
+            for i in range(0, len(values) - 1, 2):
                 res[values[i]] = values[i + 1]
             return res
         return self.getResponse().addCallback(post_process)
@@ -132,7 +139,7 @@ class RedisClient(RedisBase):
         unchanged.
         """
 
-        self._send('msetnx', *list(itertools.chain(*mapping.iteritems())))
+        self._send('msetnx', *list(itertools.chain(*six.iteritems(mapping))))
         return self.getResponse()
 
     def mset(self, mapping, preserve=False):
@@ -143,7 +150,7 @@ class RedisClient(RedisBase):
             command = 'MSETNX'
         else:
             command = 'MSET'
-        self._send(command, *list(itertools.chain(*mapping.iteritems())))
+        self._send(command, *list(itertools.chain(*six.iteritems(mapping))))
         return self.getResponse()
 
     def append(self, key, value):
@@ -964,7 +971,7 @@ class RedisClient(RedisBase):
             stmt.extend(['LIMIT', start, num])
         if get is None:
             pass
-        elif isinstance(get, basestring):
+        elif isinstance(get, six.string_types):
             stmt.extend(['GET', get])
         elif isinstance(get, list) or isinstance(get, tuple):
             for g in get:
@@ -1012,7 +1019,7 @@ class RedisClient(RedisBase):
         at key. This command overwrites any existing fields in the hash. If key
         does not exist, a new key holding a hash is created.
         """
-        fields = list(itertools.chain(*in_dict.iteritems()))
+        fields = list(itertools.chain(*six.iteritems(in_dict)))
         self._send('HMSET', key, *fields)
         return self.getResponse()
 
@@ -1041,7 +1048,7 @@ class RedisClient(RedisBase):
         """
         Returns the value associated with field in the hash stored at key.
         """
-        if isinstance(field, basestring):
+        if isinstance(field, six.string_types):
             self._send('HGET', key, field)
         else:
             self._send('HMGET', *([key] + field))
@@ -1049,9 +1056,9 @@ class RedisClient(RedisBase):
         def post_process(values):
             if not values:
                 return values
-            if isinstance(field, basestring):
+            if isinstance(field, six.string_types):
                 return {field: values}
-            return dict(itertools.izip(field, values))
+            return dict(izip(field, values))
 
         return self.getResponse().addCallback(post_process)
     hmget = hget
@@ -1060,7 +1067,7 @@ class RedisClient(RedisBase):
         """
         Get the value of a hash field
         """
-        assert isinstance(field, basestring)
+        assert isinstance(field, six.string_types)
         self._send('HGET', key, field)
         return self.getResponse()
 
@@ -1172,7 +1179,7 @@ class RedisClient(RedisBase):
               as (value, score) for backwards compatibility reasons.
         """
         if not kwargs and len(item_tuples) == 2 and \
-           isinstance(item_tuples[0], basestring):
+           isinstance(item_tuples[0], six.string_types):
             self._send('ZADD', key, item_tuples[1], item_tuples[0])
         elif not kwargs:
             self._send('ZADD', key, *item_tuples)
@@ -1223,9 +1230,9 @@ class RedisClient(RedisBase):
         args = [op, dstkey, len(keys)]
         # add in key names, and optionally weights
         if isinstance(keys, dict):
-            args.extend(list(keys.iterkeys()))
+            args.extend(list(six.iterkeys(keys)))
             args.append('WEIGHTS')
-            args.extend(list(keys.itervalues()))
+            args.extend(list(six.itervalues(keys)))
         else:
             args.extend(keys)
         if aggregate:
