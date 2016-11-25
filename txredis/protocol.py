@@ -147,6 +147,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
                     self._multi_bulk_stack.append([multi_bulk_length, []])
                     if multi_bulk_length == 0:
                         self.multiBulkDataReceived()
+            else:
+                raise exceptions.InvalidData("Unexpected reply_type: %r", reply_type)
 
     def failRequests(self, reason):
         while self._request_queue:
