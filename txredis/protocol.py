@@ -41,10 +41,14 @@ from __future__ import unicode_literals
 
 from collections import deque
 
+from six import PY3
 from twisted.internet import defer, protocol
 from twisted.protocols import policies
 
 from txredis import exceptions
+
+if PY3:
+    unicode = str
 
 
 class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
@@ -280,16 +284,19 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
     def _encode(self, s):
         """Encode a value for sending to the server."""
-        if isinstance(s, str):
-            return s
+        if not isinstance(s, (unicode, str, bytes)):
+            s = str(s)
+        # we made "unicode" an alias for "str" on Python 3 at the head of the file
         if isinstance(s, unicode):
             try:
                 return s.encode(self.charset, self.errors)
-            except UnicodeEncodeError, e:
+            except UnicodeEncodeError as e:
                 raise exceptions.InvalidData(
                     "Error encoding unicode value '%s': %s" % (
                         s.encode(self.charset, 'replace'), e))
-        return str(s)
+        if isinstance(s, (str, bytes)):
+            return s
+        raise exceptions.InvalidData("Unexpected data: %r" % s)
 
     def _send(self, *args):
         """Encode and send a request
