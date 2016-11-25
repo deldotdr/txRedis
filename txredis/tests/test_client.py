@@ -3,6 +3,9 @@ from __future__ import unicode_literals
 import time
 import hashlib
 
+from six import integer_types, string_types, iterbytes, int2byte
+from six.moves import map
+from six.moves import range
 from twisted.internet import error
 from twisted.internet import protocol
 from twisted.internet import reactor
@@ -174,7 +177,7 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
         a = yield r.set('a', 'a')
         ex = 'OK'
         t(a, ex)
-        a = yield isinstance((yield r.randomkey()), str)
+        a = yield isinstance((yield r.randomkey()), string_types)
         ex = True
         t(a, ex)
 
@@ -213,7 +216,7 @@ class GeneralCommandTestCase(CommandsBaseTestCase):
         r = self.redis
         t = self.assertTrue
         a = yield r.dbsize()
-        t(isinstance(a, int) or isinstance(a, long))
+        t(isinstance(a, integer_types))
 
     @defer.inlineCallbacks
     def test_expire(self):
@@ -1313,7 +1316,7 @@ class SetsCommandsTestCase(CommandsBaseTestCase):
         for i in items:
             yield r.push('l', i, tail=True)
         a = yield r.sort('l')
-        ex = map(str, sorted(items))
+        ex = list(map(str, sorted(items)))
         t(a, ex)
 
     @defer.inlineCallbacks
@@ -1571,7 +1574,7 @@ class LargeMultiBulkTestCase(CommandsBaseTestCase):
         t = self.assertEqual
 
         yield r.delete('s')
-        data = set(xrange(1, 100000))
+        data = set(range(1, 100000))
         for i in data:
             r.sadd('s', i)
         res = yield r.smembers('s')
@@ -2218,8 +2221,9 @@ class ProtocolBufferingTestCase(ProtocolTestCase):
 
     def sendResponse(self, data):
         """Send a response one character at a time to test buffering"""
-        for char in data:
-            self.proto.dataReceived(char)
+        assert isinstance(data, bytes)
+        for char in iterbytes(data):
+            self.proto.dataReceived(int2byte(char))
 
 
 class PubSubCommandsTestCase(CommandsBaseTestCase):
