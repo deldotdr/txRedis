@@ -50,11 +50,11 @@ from txredis import exceptions
 class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
     """The main Redis client."""
 
-    ERROR = "-"
-    SINGLE_LINE = "+"
-    INTEGER = ":"
-    BULK = "$"
-    MULTI_BULK = "*"
+    ERROR = b"-"
+    SINGLE_LINE = b"+"
+    INTEGER = b":"
+    BULK = b"$"
+    MULTI_BULK = b"*"
 
     def __init__(self, db=None, password=None, charset='utf8',
                  errors='strict'):
@@ -62,7 +62,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         self.db = db if db is not None else 0
         self.password = password
         self.errors = errors
-        self._buffer = ''
+        self._buffer = b''
         self._bulk_length = None
         self._disconnected = False
         # Format of _multi_bulk_stack elements is:
@@ -92,16 +92,16 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
                 continue
 
             # wait until we have a line
-            if '\r\n' not in self._buffer:
+            if b'\r\n' not in self._buffer:
                 return
 
             # grab a line
-            line, self._buffer = self._buffer.split('\r\n', 1)
+            line, self._buffer = self._buffer.split(b'\r\n', 1)
             if len(line) == 0:
                 continue
 
             # first byte indicates reply type
-            reply_type = line[0]
+            reply_type = line[0:1]
             reply_data = line[1:]
 
             # Error message (-)
@@ -206,7 +206,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
 
     def singleLineReceived(self, data):
         """Single line response received."""
-        if data == 'none':
+        if data == b'none':
             # should this happen here in the client?
             reply = None
         else:
@@ -300,8 +300,8 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         cmds = []
         for i in args:
             v = self._encode(i)
-            cmds.append('$%s\r\n%s\r\n' % (len(v), v))
-        cmd = '*%s\r\n' % len(args) + ''.join(cmds)
+            cmds.append(b'$%d\r\n%s\r\n' % (len(v), v))
+        cmd = b'*%d\r\n' % len(args) + b''.join(cmds)
         self.transport.write(cmd)
 
     def send(self, command, *args):
