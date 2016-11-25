@@ -1313,7 +1313,7 @@ class SetsCommandsTestCase(CommandsBaseTestCase):
         r = self.redis
         t = self.assertEqual
         yield r.delete('l')
-        items = [007, 10, -5, 0.1, 100, -3, 20, 0.02, -3.141]
+        items = [7, 10, -5, 0.1, 100, -3, 20, 0.02, -3.141]
         for i in items:
             yield r.push('l', i, tail=True)
         a = yield r.sort('l')
