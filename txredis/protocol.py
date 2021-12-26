@@ -155,7 +155,7 @@ class RedisBase(protocol.Protocol, policies.TimeoutMixin, object):
         if self.password:
             d.addCallback(lambda _res: self.auth(self.password))
 
-        # select the db passsed in
+        # select the db passed in
         if self.db:
             d.addCallback(lambda _res: self.select(self.db))
 

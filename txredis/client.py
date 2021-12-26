@@ -43,15 +43,15 @@ class RedisClient(RedisBase):
         Make the server a slave of another instance, or promote it as master
 
         The SLAVEOF command can change the replication settings of a slave on
-        the fly. If a Redis server is arleady acting as slave, the command
-        SLAVEOF NO ONE will turn off the replicaiton turning the Redis server
+        the fly. If a Redis server is already acting as slave, the command
+        SLAVEOF NO ONE will turn off the replication turning the Redis server
         into a MASTER. In the proper form SLAVEOF hostname port will make the
         server a slave of the specific server listening at the specified
         hostname and port.
 
         If a server is already a slave of some master, SLAVEOF hostname port
         will stop the replication against the old server and start the
-        synchrnonization against the new one discarding the old dataset.
+        synchronization against the new one discarding the old dataset.
 
         The form SLAVEOF no one will stop replication turning the server into a
         MASTER but will not discard the replication. So if the old master stop
@@ -225,7 +225,7 @@ class RedisClient(RedisBase):
         """
         Inspect the internals of Redis objects.
         @param key : The Redis key you want to inspect
-        @param refcount: Returns the number of refereces of the value
+        @param refcount: Returns the number of references of the value
                          associated with the specified key.
         @param encoding: Returns the kind of internal representation for
                          value.
@@ -1101,7 +1101,7 @@ class RedisClient(RedisBase):
         """
         Removes field from the hash stored at key.
         @param key : Hash key
-        @param fields : Sequence of fields to remvoe
+        @param fields : Sequence of fields to remove
         """
         if fields:
             self._send('HDEL', key, *fields)
@@ -1260,7 +1260,7 @@ class RedisClient(RedisBase):
     def zrank(self, key, member, reverse=False):
         """
         Determine the index of a member in a sorted set. If reverse
-        is True, the scores are orderd from high to low.
+        is True, the scores are ordered from high to low.
         """
         cmd = 'ZREVRANK' if reverse else 'ZRANK'
         self._send(cmd, key, member)
@@ -1506,7 +1506,7 @@ class RedisSubscriber(RedisBase):
 
     def channelPatternSubscribed(self, channel, numSubscriptions):
         """
-        Called when a channel patern is subscribed to.
+        Called when a channel pattern is subscribed to.
         """
         pass
 
